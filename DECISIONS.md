@@ -197,3 +197,9 @@ Each entry: what we chose, the alternatives, and why. Numbers are filled in as t
 - **Not yet:** an SMT proof with Cedar's symbolic compiler (cedar-policy-symcc + cvc5, Lean-verified soundness);
   needs a Rust toolchain (~1–2 GB). The exhaustive check covers the same finite abstraction; the proof would also
   cover schema changes without re-deriving the equivalence classes.
+
+## D16. Approval channel: the terminal (2026-11-12)
+- **Chose:** the on-call person approves, edits or rejects the executor's exact calls in a terminal prompt
+  (`sao.incident`, `terminal_approver`); the graph waits durably at the interrupt, so approval can come later and
+  survives restarts. Slack or a web page would only change the transport: the signed approval of exact call hashes
+  stays the same.
