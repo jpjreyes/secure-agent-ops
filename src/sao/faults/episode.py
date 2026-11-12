@@ -69,6 +69,20 @@ def assess(snapshot: Path, injected_at: float, expected: list[str]) -> dict:
             "baseline_alerts": sorted(before), "baseline_errors": dirty, "baseline_clean": not dirty}
 
 
+def wait_quiet(max_s: int = 600, poll_s: int = 20) -> float:
+    """Wait until no error alert has fired on two checks in a row: the previous fault's errors stay in the 2-minute
+    rate window after its revert, and a baseline that starts too early inherits them (D13)."""
+    from sao.agents.remediate import live_alerts
+    t0, quiet = time.time(), 0
+    while time.time() - t0 < max_s:
+        errors = {a for a in live_alerts() if a[0] == "RequestErrorRate"}
+        quiet = quiet + 1 if not errors else 0
+        if quiet >= 2:
+            break
+        time.sleep(poll_s)
+    return round(time.time() - t0, 1)
+
+
 def record(fault_id: str, baseline_s: int = 120, after_s: int = 30, hold: bool = False,
            name: str | None = None) -> Path:
     f = FAULTS[fault_id]
@@ -78,11 +92,13 @@ def record(fault_id: str, baseline_s: int = 120, after_s: int = 30, hold: bool =
     ok, bad = control.healthy()
     if not ok:
         raise SystemExit(f"cluster not healthy before the episode: {bad}")
+    info_quiet = wait_quiet()
     ep = LIVE / (name or f"{datetime.now(UTC):%Y%m%d-%H%M%S}-{fault_id}")
     snap = ep / "snapshot"
     snap.mkdir(parents=True)
     (ep / "truth.yaml").write_text(f.truth_yaml())
-    info = {"fault": fault_id, "family": f.family, "root": f.root, "expected_symptoms": f.symptoms}
+    info = {"fault": fault_id, "family": f.family, "root": f.root, "expected_symptoms": f.symptoms,
+            "quiet_wait_s": info_quiet}
     rec = subprocess.Popen([sys.executable, "-m", "sao.telemetry.live", str(snap)],
                            stdout=(ep / "recorder.log").open("w"), stderr=subprocess.STDOUT)
     try:
