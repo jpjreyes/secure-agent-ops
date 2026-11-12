@@ -203,3 +203,9 @@ Each entry: what we chose, the alternatives, and why. Numbers are filled in as t
   (`sao.incident`, `terminal_approver`); the graph waits durably at the interrupt, so approval can come later and
   survives restarts. Slack or a web page would only change the transport: the signed approval of exact call hashes
   stays the same.
+- **Addendum (before any agent ran on live episodes):** flagd's error-rate alert is background noise (idle cluster:
+  3.3 errors per 10 min on flagd, 0 elsewhere) and no longer makes a baseline dirty. Final live set: 10 scorable
+  episodes (complete, expected alerts fired, clean baseline): 6 flag faults, 4 configuration faults (cart scaled
+  to zero, Service selector, two bad env rollouts). 9 listed but not scored: 8 whose expected alerts never fired
+  (ad high CPU, email leak, image slow load, Kafka queue, homepage flood, recommendation cache, recommendation OOM,
+  currency NetworkPolicy) and 1 whose baseline held the previous fault's errors (product-catalog failure).

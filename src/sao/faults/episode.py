@@ -41,6 +41,9 @@ def firing(snapshot: Path) -> set[tuple[str, str]]:
             if a.get("state") == "firing"}
 
 
+BACKGROUND_NOISE = {"flagd"}
+
+
 def _alerts_by_time(snapshot: Path) -> list[tuple[float, set[tuple[str, str]]]]:
     out = []
     for f in sorted(glob.glob(str(snapshot / "alerts" / "*.json"))):
@@ -64,7 +67,9 @@ def assess(snapshot: Path, injected_at: float, expected: list[str]) -> dict:
     after = set().union(*[a for t, a in series if t >= injected_at]) if series else set()
     new = {a for a in after - before if a[0] in ("RequestErrorRate", "RequestLatency")}
     on_expected = sorted(a for a in new if a[1] in expected)
-    dirty = sorted(a for a in before if a[0] == "RequestErrorRate")  # an app already failing before injection
+    # an app already failing before injection; flagd is excluded: on an idle cluster it logs a steady trickle of
+    # stream-timeout errors (3.3 per 10 min measured, every other service at 0), i.e. background noise, not a fault
+    dirty = sorted(a for a in before if a[0] == "RequestErrorRate" and a[1] not in BACKGROUND_NOISE)
     return {"new_alerts": sorted(new), "expected_alerts": on_expected, "symptom_observed": bool(on_expected),
             "baseline_alerts": sorted(before), "baseline_errors": dirty, "baseline_clean": not dirty}
 
