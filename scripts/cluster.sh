@@ -26,11 +26,14 @@ up() {
   helm repo update open-telemetry >/dev/null
   helm upgrade --install astronomy open-telemetry/opentelemetry-demo --version "$CHART_VERSION" \
     --kube-context "$CTX" --namespace "$NS" --create-namespace -f infra/otel-demo/values.yaml
+  # the chart's Prometheus has no config-reload sidecar: restart it so new alert rules / scrape settings load
+  kubectl --context "$CTX" -n "$NS" rollout restart deployment/prometheus >/dev/null
   echo "waiting for pods (image pulls can take several minutes the first time)..."
   local start=$SECONDS total ready
   while :; do
-    total=$(kubectl --context "$CTX" -n "$NS" get pods --no-headers 2>/dev/null | wc -l | tr -d ' ')
-    ready=$(kubectl --context "$CTX" -n "$NS" get pods --no-headers 2>/dev/null | awk '{split($2,a,"/"); if (a[1]==a[2] && $3=="Running") n++} END {print n+0}')
+    # a slow API server during image pulls must not abort the wait (set -e + pipefail)
+    total=$( (kubectl --context "$CTX" -n "$NS" get pods --no-headers 2>/dev/null || true) | wc -l | tr -d ' ')
+    ready=$( (kubectl --context "$CTX" -n "$NS" get pods --no-headers 2>/dev/null || true) | awk '{split($2,a,"/"); if (a[1]==a[2] && $3=="Running") n++} END {print n+0}')
     printf "\r  %s/%s pods ready (%ds)" "$ready" "$total" $((SECONDS - start))
     [[ "$total" -gt 0 && "$ready" -eq "$total" ]] && break
     (( SECONDS - start > 1500 )) && { echo; echo "timeout; see: scripts/cluster.sh status"; exit 1; }

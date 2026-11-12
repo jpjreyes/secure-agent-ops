@@ -1,8 +1,8 @@
 """Read-only telemetry MCP server (investigators' tools).
 
-Serves the tools in sao.telemetry over MCP, for one incident: an ITBench-AA snapshot today (SAO_SNAPSHOT=<folder>),
-the live cluster later (same tool names). Every tool is annotated read-only; the gateway's default policy uses those
-annotations, so investigators can never reach a tool that changes anything.
+Serves the tools in sao.telemetry over MCP, for one incident (SAO_SNAPSHOT=<folder>): an ITBench-AA snapshot or a
+live recording of the cluster (sao.telemetry.live), with the same tool names. Every tool is annotated read-only; the
+gateway's default policy uses those annotations, so investigators can never reach a tool that changes anything.
 
 Run:  SAO_SNAPSHOT=data/itbench-aa/snapshots/Scenario-24 uv run python -m sao.mcp.telemetry_server   (stdio)
 """
@@ -10,6 +10,7 @@ Run:  SAO_SNAPSHOT=data/itbench-aa/snapshots/Scenario-24 uv run python -m sao.mc
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
@@ -21,12 +22,18 @@ READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotent
 server = MCPServer("telemetry", instructions="Read-only incident telemetry: alerts, Kubernetes events and object "
                    "changes, logs, traces and metrics for the incident under investigation.")
 _snap: Snapshot | None = None
+_stamp: float | None = None
 
 
 def snap() -> Snapshot:
-    global _snap
-    if _snap is None:
-        _snap = Snapshot(os.environ["SAO_SNAPSHOT"])
+    """The incident's data. A live recording rewrites its files every poll: reopen when it has, so each call sees
+    the cluster as of the last poll. A benchmark snapshot never changes."""
+    global _snap, _stamp
+    path = Path(os.environ["SAO_SNAPSHOT"])
+    marker = path / "recorder.json"
+    stamp = marker.stat().st_mtime if marker.exists() else None
+    if _snap is None or stamp != _stamp:
+        _snap, _stamp = Snapshot(path), stamp
     return _snap
 
 

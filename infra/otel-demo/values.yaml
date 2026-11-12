@@ -22,7 +22,12 @@ components:
   frontend:         {resources: {requests: {memory: 120Mi}, limits: {memory: 250Mi}}}
   frontend-proxy:   {resources: {requests: {memory: 45Mi},  limits: {memory: 90Mi}}}
   image-provider:   {resources: {requests: {memory: 25Mi},  limits: {memory: 50Mi}}}
-  load-generator:   {resources: {requests: {memory: 300Mi}, limits: {memory: 1500Mi}}}
+  # browser users run headless Chrome: ~1 CPU of the 4-CPU VM, which starved probes (collector restarts) and
+  # slowed the API server. HTTP users (weight 9 of 10 upstream) generate the same service traffic.
+  load-generator:
+    resources: {requests: {memory: 300Mi}, limits: {memory: 1500Mi}}
+    envOverrides:
+      - {name: LOCUST_BROWSER_TRAFFIC_ENABLED, value: "false"}
   payment:          {resources: {requests: {memory: 70Mi},  limits: {memory: 140Mi}}}
   product-catalog:  {resources: {requests: {memory: 20Mi},  limits: {memory: 32Mi}}}
   quote:            {resources: {requests: {memory: 20Mi},  limits: {memory: 40Mi}}}
@@ -39,10 +44,37 @@ opentelemetry-collector:
 jaeger:
   jaeger:
     resources: {requests: {memory: 300Mi}, limits: {memory: 600Mi}}
+# 3. Prometheus: 15 s scrape/evaluation (faults show up within a minute) and the two service alerts ITBench-AA's
+#    environment fires (same names, labels and description format), so live incidents look like the benchmark's.
 prometheus:
   server:
     resources: {requests: {memory: 256Mi}, limits: {memory: 512Mi}}
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+      scrape_timeout: 10s
+  serverFiles:
+    alerting_rules.yml:
+      groups:
+        - name: otel-demo-services
+          rules:
+            - alert: RequestErrorRate
+              expr: |
+                sum by (service_name, namespace) (rate(traces_span_metrics_calls_total{span_kind="SPAN_KIND_SERVER", status_code="STATUS_CODE_ERROR"}[2m]))
+                  / sum by (service_name, namespace) (rate(traces_span_metrics_calls_total{span_kind="SPAN_KIND_SERVER"}[2m])) > 0
+              for: 30s
+              labels: {severity: warning, namespace: otel-demo}
+              annotations:
+                description: "Request error rate in service {{ $labels.service_name }} in namespace otel-demo is above 0 (current: {{ $value }})"
+            - alert: RequestLatency
+              expr: |
+                histogram_quantile(0.95, sum by (le, service_name, namespace) (rate(traces_span_metrics_duration_milliseconds_bucket{span_kind="SPAN_KIND_SERVER"}[2m]))) > 1500
+              for: 30s
+              labels: {severity: warning, namespace: otel-demo}
+              annotations:
+                description: "Latency in service {{ $labels.service_name }} in namespace otel-demo is above 1500ms (current: {{ $value }}ms)"
+# 4. Grafana off: agents query Prometheus/Jaeger/OpenSearch directly, and Grafana used ~1 CPU of the 4-CPU VM.
 grafana:
-  resources: {requests: {memory: 150Mi}, limits: {memory: 500Mi}}
+  enabled: false
 opensearch:
   resources: {requests: {memory: 700Mi}, limits: {memory: 1100Mi}}
