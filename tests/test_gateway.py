@@ -24,6 +24,8 @@ from mcp.client.streamable_http import create_mcp_http_client, streamable_http_c
 from sao import kube
 from sao.gateway import audit
 from sao.gateway.approvals import sign_approval
+from sao.gateway.killswitch import KillSwitch
+from sao.gateway.limits import RateLimiter
 from sao.gateway.policy import Policy
 from sao.gateway.server import Gateway, Upstream
 from sao.identity.issuer import ASSERTION_TYPE, AT_TYPE, CC, TX, Client, Issuer, Registry, make_assertion
@@ -66,7 +68,8 @@ def env(tmp_path_factory):
            Upstream("cluster", StdioServerParameters(command=py, args=["-m", "sao.mcp.cluster_server"],
                                                      env={"SAO_DRY_RUN": "1",
                                                           "SAO_ACTION_LEDGER": str(tmp / "ledger.jsonl")}))]
-    gw = Gateway(verifier, Policy(), tmp / "audit.jsonl", ups)
+    ks = KillSwitch(tmp / "killswitch.json")
+    gw = Gateway(verifier, Policy(), tmp / "audit.jsonl", ups, killswitch=ks)
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
@@ -85,7 +88,8 @@ def env(tmp_path_factory):
             f |= {"subject_token": subject, "subject_token_type": AT_TYPE}
         return issuer.token(f)["access_token"]
 
-    yield {"url": f"http://127.0.0.1:{port}", "tok": tok, "issuer": issuer, "revoked": revoked, "tmp": tmp}
+    yield {"url": f"http://127.0.0.1:{port}", "tok": tok, "issuer": issuer, "revoked": revoked, "tmp": tmp, "ks": ks,
+           "gw": gw}
     srv.should_exit = True
     th.join(10)
 
@@ -177,3 +181,62 @@ def test_audit_chain_verifies_and_detects_edits(env):
     tampered.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
     ok, msg = audit.verify(tampered)
     assert not ok and "content changed" in msg
+
+
+def test_disabled_tool_is_hidden_and_refused(env):
+    inv = env["tok"]("agent:investigator")
+    url = env["url"] + "/mcp/telemetry/"
+    env["ks"].disable_tool("telemetry/search_logs", reason="test")
+    try:
+        names = [t.name for t in run(url, inv, lambda s: s.list_tools()).tools]
+        assert "search_logs" not in names and "alerts" in names
+        r = run(url, inv, lambda s: s.call_tool("search_logs", {"pattern": "error"}))
+        assert r.is_error and "kill switch" in r.content[0].text
+    finally:
+        env["ks"].clear()
+
+
+def test_kill_switch_time_to_effect(env):
+    """Revoke an agent while it is calling; the next call after the revocation is refused. Measured end to end
+    (HTTP + token verification), reported in DECISIONS.md."""
+    import httpx
+    inv = env["tok"]("agent:investigator")
+    url = env["url"] + "/mcp/telemetry/"
+    body = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+    headers = {"Authorization": f"Bearer {inv}", "Accept": "application/json, text/event-stream",
+               "MCP-Protocol-Version": "2025-06-18"}
+    timings = []
+    with httpx.Client(timeout=10) as http:
+        for _ in range(5):
+            assert http.post(url, json=body, headers=headers).status_code != 401
+            t_revoke = time.perf_counter()
+            env["ks"].revoke_agent("agent:investigator", reason="test")
+            while http.post(url, json=body, headers=headers).status_code != 401:
+                pass
+            timings.append((time.perf_counter() - t_revoke) * 1000)
+            env["ks"].clear()
+    timings.sort()
+    print(f"kill switch time to effect: median {timings[2]:.1f} ms, max {timings[-1]:.1f} ms")
+    (env["tmp"] / "killswitch_timing.json").write_text(json.dumps(timings))
+    assert timings[-1] < 1000
+
+
+def test_rate_limit_refuses_a_runaway_agent(env):
+    env["gw"].limiter = RateLimiter(per_min=6, burst=3)
+    inv = env["tok"]("agent:investigator")
+    try:
+        async def burst(s):
+            return [await s.call_tool("overview", {}) for _ in range(5)]
+        rs = run(env["url"] + "/mcp/telemetry/", inv, burst)
+        assert [r.is_error for r in rs][:3] == [False] * 3 and rs[-1].is_error
+        assert "rate limit" in rs[-1].content[0].text
+    finally:
+        env["gw"].limiter = RateLimiter()
+
+
+def test_oversized_output_is_cut_with_a_notice(env, monkeypatch):
+    import sao.gateway.server as srv
+    monkeypatch.setattr(srv, "cap", lambda text, limit=300: (text[:limit] + "\n… [cut by the gateway]", True)
+                        if len(text) > limit else (text, False))
+    r = run(env["url"] + "/mcp/telemetry/", env["tok"]("agent:investigator"), lambda s: s.call_tool("events", {}))
+    assert not r.is_error and "cut by the gateway" in r.content[0].text

@@ -59,7 +59,7 @@ class GatewayHandle:
 
 @contextmanager
 def running_gateway(snapshot: Path, audit_dir: Path, cluster: bool = False, dry_run: bool = True,
-                    is_revoked=None, screening: bool = True):
+                    is_revoked=None, screening: bool = True, killswitch=None):
     issuer = local_issuer("http://127.0.0.1:18100")
     verifier = Verifier({issuer.iss: issuer.jwks()}, is_revoked=is_revoked)
     py = sys.executable
@@ -70,7 +70,9 @@ def running_gateway(snapshot: Path, audit_dir: Path, cluster: bool = False, dry_
             command=py, args=["-m", "sao.mcp.cluster_server"],
             env={"SAO_DRY_RUN": "1" if dry_run else "0", "SAO_ACTION_LEDGER": str(audit_dir / "actions.jsonl")})))
     audit_dir.mkdir(parents=True, exist_ok=True)
-    gw = Gateway(verifier, Policy(), audit_dir / "audit.jsonl", ups, screening=screening)
+    from sao.gateway.killswitch import KillSwitch
+    gw = Gateway(verifier, Policy(), audit_dir / "audit.jsonl", ups, screening=screening,
+                 killswitch=killswitch or KillSwitch())
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]

@@ -171,3 +171,14 @@ Each entry: what we chose, the alternatives, and why. Numbers are filled in as t
 - **Fix:** reverting a flag fault also restarts the service the flag acts on; an episode records whether an error
   alert was already firing during its baseline (`baseline_clean`); only complete, symptomatic, clean episodes are
   scored. The 9 contaminated episodes are recorded again; results on them were discarded.
+
+## D14. Kill switch and limits (2026-11-12)
+- **Kill switch:** revoke an agent, one token or one tool; checked on every request (token verification and each
+  tool call), so no session outlives a revocation; disabled tools also disappear from tool lists. Local backend: a
+  JSON file shared by all gateway processes (re-read only when it changes); DynamoDB on AWS (M7). **Measured
+  time-to-effect (local, over HTTP with full token verification): median 15.6 ms, max 87 ms over 5 trials**
+  (`tests/test_gateway.py::test_kill_switch_time_to_effect`).
+- **Rate limit:** token bucket per agent (120 calls/min, burst 40; a team episode measured ~70 calls in ~90 s across
+  6 agents, so normal work never hits it); refusals are audited.
+- **Output cap:** telemetry results over 20,000 characters are cut with a notice to narrow the query (protects the
+  model's context and cost per call); recorded in the audit as `output_cut`.

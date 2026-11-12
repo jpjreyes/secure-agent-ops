@@ -32,6 +32,8 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from sao.gateway.approvals import ApprovalChecker
 from sao.gateway.audit import AuditLog, call_hash
+from sao.gateway.killswitch import KillSwitch
+from sao.gateway.limits import RateLimiter, cap
 from sao.gateway.policy import Policy, ToolInfo, tool_from_annotations
 from sao.gateway.screening import screen
 from sao.identity.verify import AuthError, Principal, Verifier
@@ -81,8 +83,14 @@ class BearerAuth:
 
 class Gateway:
     def __init__(self, verifier: Verifier, policy: Policy, audit_path: str | Path, upstreams: list[Upstream],
-                 approvals: ApprovalChecker | None = None, screening: bool = True):
+                 approvals: ApprovalChecker | None = None, screening: bool = True,
+                 killswitch: KillSwitch | None = None, limiter: RateLimiter | None = None):
         self.screening = screening
+        self.killswitch = killswitch
+        self.limiter = limiter or RateLimiter()
+        if killswitch is not None:  # revocations are checked at token verification, on every request
+            prev = verifier.is_revoked
+            verifier.is_revoked = lambda jti, agents: killswitch.is_revoked(jti, agents) or prev(jti, agents)
         self.verifier, self.policy, self.upstreams = verifier, policy, {u.name: u for u in upstreams}
         self.audit = AuditLog(audit_path)
         self.approvals = approvals or ApprovalChecker(verifier.trusted, verifier.audience)
@@ -92,7 +100,8 @@ class Gateway:
     def _server(self, up: Upstream) -> Server:
         async def list_tools(ctx, params) -> types.ListToolsResult:
             p = _principal.get()
-            visible = [t for t in up.tools if self.policy.visible(p, up.info(t))]
+            visible = [t for t in up.tools if self.policy.visible(p, up.info(t))
+                       and not (self.killswitch and self.killswitch.tool_disabled(f"{up.name}/{t.name}"))]
             self.audit.append(event="list", agent=p.agent, on_behalf_of=p.on_behalf_of, chain=p.chain,
                               token_id=p.token_id, server=up.name, visible=[t.name for t in visible])
             return types.ListToolsResult(tools=visible)
@@ -109,6 +118,12 @@ class Gateway:
                 self.audit.append(**base, decision="deny", policies=["unknown-tool"])
                 return _error(f"unknown tool {params.name}")
             info = up.info(tool)
+            if self.killswitch and self.killswitch.tool_disabled(info.uid):
+                self.audit.append(**base, decision="deny", policies=["kill-switch"])
+                return _error(f"denied: {info.uid} is disabled by the kill switch")
+            if not self.limiter.allow(p.agent):
+                self.audit.append(**base, decision="deny", policies=["rate-limit"])
+                return _error("denied: rate limit for this agent; slow down and narrow your queries")
             approved, why = (False, "not destructive") if not info.destructive else self.approvals.approved(
                 _approval.get(), up.name, params.name, args, p.on_behalf_of)
             d = self.policy.authorize(p, info, args, approved)
@@ -118,7 +133,19 @@ class Gateway:
                                   decide_ms=decide_ms)
                 return _error(f"denied by policy: {', '.join(d.policies)}" + (f" ({why})" if info.destructive else ""))
             result = await up.session.call_tool(params.name, args)
-            hits = []
+            hits, cut = [], False
+            if info.read_only:  # cap output size before screening (screening adds its own wrapper)
+                content = []
+                for c in result.content:
+                    if getattr(c, "type", "") == "text":
+                        text, was_cut = cap(c.text)
+                        cut |= was_cut
+                        c = types.TextContent(type="text", text=text)
+                    content.append(c)
+                st = result.structured_content
+                if cut and isinstance(st, dict) and isinstance(st.get("result"), str) and content:
+                    st = {**st, "result": content[0].text}
+                result = types.CallToolResult(content=content, structured_content=st, is_error=result.is_error)
             if self.screening and info.read_only:  # telemetry is untrusted text: spotlight + flag
                 content = []
                 for c in result.content:
@@ -135,7 +162,7 @@ class Gateway:
                                               is_error=result.is_error)
             self.audit.append(**base, decision="allow", policies=list(d.policies), approval=why,
                               decide_ms=decide_ms, total_ms=round((time.perf_counter() - t0) * 1000, 1),
-                              upstream_error=bool(result.is_error), screening_hits=hits)
+                              upstream_error=bool(result.is_error), screening_hits=hits, output_cut=cut)
             return result
 
         return Server(f"sao-gateway/{up.name}", on_list_tools=list_tools, on_call_tool=call_tool)
