@@ -44,7 +44,8 @@ nothing here is changed after test-set results are seen.
 
 ## Expansion, in this order, only if quota allows (decided before the scored run)
 1. Setup B on all 30 test scenarios.
-2. 5 repeats instead of 3.
+2. 5 repeats instead of 3, for setups A and C only, **if** after 30 × 3 the 95% interval of the paired A-vs-C
+   difference includes zero and the weekly quota allows (rule fixed 2026-11-12, before any test run).
 3. ~~More scenarios from ITBench-Lite~~: not available (its SRE scenarios are the same IDs).
 4. All 40 scenarios as a secondary figure, labeled "includes the 10 dev scenarios".
 
@@ -83,3 +84,5 @@ nothing here is changed after test-set results are seen.
 - 2026-11-12: request capture done before any scored run (`evals/CAPTURE.md`): system prompt byte-identical to ours
   after the SDK's standard line, user message exactly ours, only our tools, pinned model and effort. Turn-cap stops
   are now a failed answer for that agent instead of a crash of the episode.
+- 2026-11-12: test-run size measured on dev (A $0.072, C $0.210, B ≈ $0.096 per run API-equivalent; ≈ $28 for
+  A/C 30 × 3 + B 10 × 3, ≈ 2 five-hour windows, ≈ 10–12 points weekly); extra-repeats rule made explicit.
