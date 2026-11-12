@@ -89,7 +89,11 @@ def record(fault_id: str, baseline_s: int = 120, after_s: int = 30, hold: bool =
     reverted = control.revert_all()
     if reverted:
         print(f"reverted leftover faults: {reverted}")
-    ok, bad = control.healthy()
+    for _ in range(12):  # restarts from the previous revert may still be rolling out
+        ok, bad = control.healthy()
+        if ok:
+            break
+        time.sleep(10)
     if not ok:
         raise SystemExit(f"cluster not healthy before the episode: {bad}")
     info_quiet = wait_quiet()

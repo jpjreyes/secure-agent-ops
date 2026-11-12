@@ -82,6 +82,8 @@ def healthy() -> tuple[bool, list[str]]:
     pods = kube.get("pods")["items"]
     bad = []
     for p in pods:
+        if p["metadata"].get("deletionTimestamp"):  # an old pod shutting down after a restart
+            continue
         cs = p.get("status", {}).get("containerStatuses") or []
         if p["status"].get("phase") != "Running" or not cs or not all(c.get("ready") for c in cs):
             bad.append(p["metadata"]["name"])
