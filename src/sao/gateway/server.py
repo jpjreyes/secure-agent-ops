@@ -127,7 +127,12 @@ class Gateway:
                         hits += sc.hits
                         c = types.TextContent(type="text", text=sc.text)
                     content.append(c)
-                result = types.CallToolResult(content=content, is_error=result.is_error)
+                structured = result.structured_content
+                if isinstance(structured, dict) and isinstance(structured.get("result"), str) and content:
+                    # tools with an output schema carry the text twice; screen both, or the client rejects it
+                    structured = {**structured, "result": content[0].text}
+                result = types.CallToolResult(content=content, structured_content=structured,
+                                              is_error=result.is_error)
             self.audit.append(**base, decision="allow", policies=list(d.policies), approval=why,
                               decide_ms=decide_ms, total_ms=round((time.perf_counter() - t0) * 1000, 1),
                               upstream_error=bool(result.is_error), screening_hits=hits)
