@@ -7,7 +7,8 @@ normalization step replaced by deterministic rules that encode the same instruct
   - A submitted entity matches a ground-truth group when namespace agrees, the kind is compatible, and the name
     full-matches one of the group's `filter` regexes (or, with no filter, equals the group id minus a "-<n>" suffix).
   - Kind compatibility: same kind; Deployment ≡ Pod when the workload name corresponds; any chaos-mesh kind
-    (Schedule, NetworkChaos, StressChaos, ...) ≡ any other chaos-mesh kind when name and namespace correspond.
+    (Schedule, NetworkChaos, StressChaos, ...) ≡ any other chaos-mesh kind when name and namespace correspond,
+    including the objects a Schedule spawns ("<schedule name>-<5 chars>").
   - Alias groups are merged into scoring groups; a scoring group is a root-cause target if any member is a root cause.
     Several predictions in the same scoring group count once.
   - Score per run: 0.0 if any root-cause scoring group is missed, else TP / (TP + FP), where unmatched predictions
@@ -25,6 +26,7 @@ import yaml
 
 CHAOS_KINDS = {"schedule", "networkchaos", "stresschaos", "httpchaos", "jvmchaos", "podchaos", "iochaos",
                "timechaos", "dnschaos", "kernelchaos", "workflow"}
+CHAOS_SPAWN = re.compile(r"-[a-z0-9]{5}$")  # chaos objects spawned by a Schedule
 POD_SUFFIX = re.compile(r"-[a-z0-9]{6,10}-[a-z0-9]{5}$")  # deployment pods: <workload>-<rs hash>-<pod hash>
 FAKE_POD = "-5d8f7c9b6d-abcde"
 
@@ -60,7 +62,8 @@ class Group:
             return False
         sk, gk, name = e["kind"].lower(), self.kind.lower(), e["name"]
         if sk == gk or (sk in CHAOS_KINDS and gk in CHAOS_KINDS):
-            return self._name_ok(name)
+            # a Schedule spawns chaos objects named "<schedule>-<5 chars>": either name matches
+            return self._name_ok(name) or (gk in CHAOS_KINDS and self._name_ok(CHAOS_SPAWN.sub("", name)))
         if sk == "deployment" and gk == "pod":  # a deployment matches its pods
             return self._name_ok(name + FAKE_POD)
         if sk == "pod" and gk == "deployment":

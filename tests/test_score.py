@@ -91,3 +91,8 @@ def test_unmatched_prediction_is_false_positive():
 def test_wrong_namespace_misses_and_empty_is_zero():
     assert s(NETWORK, CHAOS.replace("chaos-mesh/", "otel-demo/")).score == 0.0
     assert s(NETWORK).score == 0.0
+
+
+def test_spawned_chaos_object_matches_its_schedule_group():
+    assert s(NETWORK, "chaos-mesh/NetworkChaos/otel-demo-checkout-kafka-network-partition-rjhbq").score == 1.0
+    assert s(NETWORK, "chaos-mesh/NetworkChaos/otel-demo-checkout-kafka-network-partition-rjhbqx").score == 0.0
