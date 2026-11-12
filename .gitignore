@@ -1,0 +1,15 @@
+# local only
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+data/
+runs/
+node_modules/
+.next/
+*.tfstate*
+.terraform/

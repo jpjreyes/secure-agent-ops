@@ -1,0 +1,48 @@
+# Overrides for the OpenTelemetry Demo chart (version pinned in scripts/cluster.sh).
+#
+# 1. The chart sets only memory limits, so Kubernetes makes requests = limits (~9 GiB), which doesn't fit the 8 GiB
+#    Colima VM. Limits stay as upstream (so OOM behavior and the faults stay realistic); requests are set to what the
+#    services actually use at idle, so the scheduler can place everything.
+# 2. The demo's AI shopping assistant (agent, chatbot, mcp) and the docs site are off: they postdate the demo version
+#    ITBench's scenarios were recorded on, the agent needs an external LLM, and they'd add noise to the telemetry.
+
+components:
+  agent: {enabled: false}
+  chatbot: {enabled: false}
+  mcp: {enabled: false}
+  telemetry-docs: {enabled: false}
+
+  accounting:       {resources: {requests: {memory: 80Mi},  limits: {memory: 160Mi}}}
+  ad:               {resources: {requests: {memory: 150Mi}, limits: {memory: 300Mi}}}
+  cart:             {resources: {requests: {memory: 80Mi},  limits: {memory: 160Mi}}}
+  checkout:         {resources: {requests: {memory: 20Mi},  limits: {memory: 32Mi}}}
+  currency:         {resources: {requests: {memory: 10Mi},  limits: {memory: 20Mi}}}
+  email:            {resources: {requests: {memory: 50Mi},  limits: {memory: 100Mi}}}
+  fraud-detection:  {resources: {requests: {memory: 150Mi}, limits: {memory: 300Mi}}}
+  frontend:         {resources: {requests: {memory: 120Mi}, limits: {memory: 250Mi}}}
+  frontend-proxy:   {resources: {requests: {memory: 45Mi},  limits: {memory: 90Mi}}}
+  image-provider:   {resources: {requests: {memory: 25Mi},  limits: {memory: 50Mi}}}
+  load-generator:   {resources: {requests: {memory: 300Mi}, limits: {memory: 1500Mi}}}
+  payment:          {resources: {requests: {memory: 70Mi},  limits: {memory: 140Mi}}}
+  product-catalog:  {resources: {requests: {memory: 20Mi},  limits: {memory: 32Mi}}}
+  quote:            {resources: {requests: {memory: 20Mi},  limits: {memory: 40Mi}}}
+  recommendation:   {resources: {requests: {memory: 150Mi}, limits: {memory: 500Mi}}}
+  shipping:         {resources: {requests: {memory: 10Mi},  limits: {memory: 20Mi}}}
+  flagd:            {resources: {requests: {memory: 40Mi},  limits: {memory: 75Mi}}}
+  kafka:            {resources: {requests: {memory: 400Mi}, limits: {memory: 700Mi}}}
+  astronomy-db:     {resources: {requests: {memory: 50Mi},  limits: {memory: 100Mi}}}
+  valkey-cart:      {resources: {requests: {memory: 10Mi},  limits: {memory: 20Mi}}}
+  opamp-server:     {resources: {requests: {memory: 30Mi},  limits: {memory: 65Mi}}}
+
+opentelemetry-collector:
+  resources: {requests: {memory: 200Mi}, limits: {memory: 400Mi}}
+jaeger:
+  jaeger:
+    resources: {requests: {memory: 300Mi}, limits: {memory: 600Mi}}
+prometheus:
+  server:
+    resources: {requests: {memory: 256Mi}, limits: {memory: 512Mi}}
+grafana:
+  resources: {requests: {memory: 150Mi}, limits: {memory: 500Mi}}
+opensearch:
+  resources: {requests: {memory: 700Mi}, limits: {memory: 1100Mi}}
