@@ -114,3 +114,24 @@ Each entry: what we chose, the alternatives, and why. Numbers are filled in as t
 - **Not tuned further (overfitting risk on 10 scenarios):** S26's root cause (an HTTPChaos object) appears nowhere in
   its snapshot (no setup can name it); S33's second entity really had the same bad change; S1's object timestamps are
   snapshot capture times, which hides that the load generator came first.
+
+## D10. Agent identity: a small OIDC-shaped issuer of short-lived tokens, delegation per RFC 8693 (2026-11-12)
+- **Chose (option A of three):** the project issues its own tokens. Each agent role is an OAuth client that
+  authenticates with a signed JWT assertion (`private_key_jwt`, RFC 7523) and gets a 10-minute ES256 access token
+  (client-credentials shape). Acting for a person goes through RFC 8693 token exchange: `sub` = the user, nested
+  `act` = the agent chain (commander → executor). The issuer publishes a standard OIDC discovery document and JWKS,
+  so the gateway validates any OIDC issuer by configuration (a customer's Okta or Entra ID is a config change).
+  On AWS the signing key is a KMS ECC_NIST_P256 key (the private key never leaves KMS).
+- **Alternatives:** B, Keycloak locally (Standard Token Exchange since 26.2, but `act` delegation only in preview;
+  on AWS Cognito has client credentials and no RFC 8693, so local and cloud would diverge; ~0.5–1 GB more RAM).
+  C, SPIFFE/SPIRE plus exchange (our agents run as host processes and on Lambda, not pods, so attestation doesn't
+  fit; ~15–25 h). AgentCore Identity (still needs an external IdP for inbound; ties local evals to AWS).
+- **Why:** the project's value is the gateway's decisions (Cedar on arguments, screening, audit, kill switch); A
+  produces exactly the claims they consume, identical locally and on Lambda, ~$1/month. Postings checked
+  (Celonis, Revin and ~10 other FDE postings): none asks to operate an IdP; identity shows up as protocol literacy
+  (OAuth, SSO, delegated access) plus least-privilege authorization. P3 already shows a real IdP integration
+  (Entra ID SSO).
+- **Invariants (same in every option):** tokens live in the agent's MCP connection headers, never in the model's
+  context; human approval is a separate signed record checked by Cedar, never a token claim; the kill switch
+  deny-lists agent ids and token ids; the orchestrator holding agent credentials is the trust root (documented in
+  the threat model).
