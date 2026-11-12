@@ -199,3 +199,22 @@ for _f in FAULTS.values():
 for _f in FAULTS.values():
     if "frontend" in _f.symptoms and "frontend-proxy" not in _f.symptoms:
         _f.symptoms.append("frontend-proxy")
+
+# Known remedies (D12, evals/PLAN.md "Remediation"): the actions that fix each fault. A plan is correct if it contains
+# one of them (arguments matching on the keys given); [] means no available tool fixes it, so the right plan is to
+# escalate without acting.
+def _flag_off(f: Fault) -> list[dict]:
+    return [{"tool": "set_flag", "args": {"flag": f.flag, "variant": "off"}}]
+
+
+REMEDIES: dict[str, list[dict]] = {fid: _flag_off(f) for fid, f in FAULTS.items() if isinstance(f, FlagFault)}
+REMEDIES |= {
+    "cfg-checkout-payment-addr": [{"tool": "rollback_deployment", "args": {"name": "checkout"}}],
+    "cfg-shipping-quote-addr": [{"tool": "rollback_deployment", "args": {"name": "shipping"}}],
+    "cfg-recommendation-catalog-addr": [{"tool": "rollback_deployment", "args": {"name": "recommendation"}}],
+    "cfg-recommendation-oom": [{"tool": "rollback_deployment", "args": {"name": "recommendation"}}],
+    "cfg-cart-scaled-to-zero": [{"tool": "scale_deployment", "args": {"name": "cart"}, "min_replicas": 1}],
+    "cfg-currency-netpol": [{"tool": "delete_networkpolicy", "args": {"name": "currency-lockdown"}}],
+    "cfg-catalog-service-selector": [],  # no tool edits a Service: escalate to a person
+}
+assert set(REMEDIES) == set(FAULTS)

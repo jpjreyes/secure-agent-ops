@@ -43,8 +43,9 @@ SIGNAL_TOOLS = {
     "metrics": ["overview", "alerts", "metric_anomalies", "metric_series", "list_metrics"],
 }
 
-MODELS = {"commander": "sonnet", "investigator": "haiku", "verifier": "sonnet"}
-TURNS = {"commander_plan": 8, "investigator": 25, "commander_synthesize": 4, "verifier": 30}
+MODELS = {"commander": "sonnet", "investigator": "haiku", "verifier": "sonnet", "executor": "sonnet"}
+TURNS = {"commander_plan": 8, "investigator": 25, "commander_synthesize": 4, "verifier": 30, "executor": 15}
+CHECK_SETTLE_S = 180
 
 
 class NodeStop(Exception):
@@ -64,6 +65,13 @@ class TeamState(TypedDict, total=False):
     draft: dict
     final: dict
     verdicts: list[dict]
+    remediate: bool                 # live incidents only: plan → approval → execute → check after the diagnosis
+    incident_alerts: list
+    fix_plan: dict
+    fix_calls: list[dict]
+    decision: dict
+    action_results: list[dict]
+    outcome: dict
     calls: Annotated[list[dict], operator.add]
 
 
@@ -275,6 +283,58 @@ async def verify(state: TeamState) -> dict:
     return {"final": final, "verdicts": verdicts, "calls": [_record(r, "verify")]}
 
 
+async def plan_fix(state: TeamState) -> dict:
+    from sao.agents import remediate
+    diagnosis = state.get("final") or state.get("draft") or {}
+    r = await _agent("plan_fix", role="executor", system=remediate.EXECUTOR, snapshot=Path(state["snapshot"]),
+                     prompt="Verified diagnosis:\n" + json.dumps(diagnosis, indent=1) + "\n\nPropose the remediation plan.",
+                     model=MODELS["executor"], schema=remediate.PLAN_SCHEMA, tools=None, max_turns=TURNS["executor"])
+    plan = r["output"] or {"summary": "(planning failed)", "actions": []}
+    return {"fix_plan": plan, "calls": [_record(r, "plan_fix")]}
+
+
+def approve(state: TeamState, config) -> dict:
+    """Pause for a person (durable: the checkpointer keeps the thread until someone resumes it). Resume value:
+    {"decision": "approve" | "reject", "calls": [...] (possibly edited), "approver": str, "approval": token}."""
+    from langgraph.types import interrupt
+
+    from sao.agents import remediate
+    calls = remediate.calls_for(state["fix_plan"], config["configurable"]["thread_id"])
+    answer = interrupt({"plan": state["fix_plan"], "calls": calls})
+    return {"fix_calls": answer.get("calls", calls), "decision": {k: v for k, v in answer.items() if k != "calls"}}
+
+
+async def execute_fix(state: TeamState) -> dict:
+    from sao.agents import remediate
+    from sao.gateway.local import ONCALL
+    gw = sdk.GATEWAY
+    if gw is None:
+        return {"action_results": [{"status": "not run", "detail": "no gateway for this incident"}]}
+    results = await remediate.execute(state["fix_calls"], gw, state["decision"].get("approval"),
+                                      state["decision"].get("approver", ONCALL))
+    return {"action_results": results}
+
+
+async def check_fix(state: TeamState) -> dict:
+    from sao.agents import remediate
+    if not all(r.get("status") == "done" for r in state.get("action_results", [])):
+        return {"outcome": {"resolved": False, "reason": "not every action ran"}}
+    return {"outcome": await asyncio.to_thread(remediate.check, state.get("incident_alerts") or [],
+                                               CHECK_SETTLE_S)}
+
+
+def after_verify(state: TeamState) -> str:
+    return "plan_fix" if state.get("remediate") else END
+
+
+def after_plan(state: TeamState) -> str:
+    return "approve" if (state.get("fix_plan") or {}).get("actions") else END
+
+
+def after_approve(state: TeamState) -> str:
+    return "execute_fix" if state.get("decision", {}).get("decision") == "approve" else END
+
+
 def after_synthesis(state: TeamState) -> str:
     return "verify" if state.get("setup") == "C" else END
 
@@ -285,11 +345,19 @@ def build() -> StateGraph:
     g.add_node("investigate", investigate)
     g.add_node("commander_synthesize", commander_synthesize)
     g.add_node("verify", verify)
+    g.add_node("plan_fix", plan_fix)
+    g.add_node("approve", approve)
+    g.add_node("execute_fix", execute_fix)
+    g.add_node("check_fix", check_fix)
     g.add_edge(START, "commander_plan")
     g.add_conditional_edges("commander_plan", fan_out, ["investigate"])
     g.add_edge("investigate", "commander_synthesize")
     g.add_conditional_edges("commander_synthesize", after_synthesis, ["verify", END])
-    g.add_edge("verify", END)
+    g.add_conditional_edges("verify", after_verify, ["plan_fix", END])
+    g.add_conditional_edges("plan_fix", after_plan, ["approve", END])
+    g.add_conditional_edges("approve", after_approve, ["execute_fix", END])
+    g.add_edge("execute_fix", "check_fix")
+    g.add_edge("check_fix", END)
     return g
 
 
