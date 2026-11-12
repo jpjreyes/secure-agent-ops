@@ -36,18 +36,35 @@ TABLES = {  # raw file → parquet name
 }
 
 
+def _timestamps_ok(con: duckdb.DuckDBPyConnection, dst: Path) -> bool:
+    """A misparsed file shifts columns, so its timestamp column stops parsing. Require ≥95% valid timestamps."""
+    cols = [c[0] for c in con.execute(f"DESCRIBE SELECT * FROM '{dst}'").fetchall()]
+    ts = next((c for c in cols if c.lower() == "timestamp"), None)
+    if ts is None:
+        return False
+    total, good = con.execute(f'SELECT count(*), count(try_cast("{ts}" AS TIMESTAMP)) FROM \'{dst}\'').fetchone()
+    return total > 0 and good >= 0.95 * total
+
+
 def tsv_to_parquet(con: duckdb.DuckDBPyConnection, src: str, dst: Path, many: bool = False) -> int:
-    """Typed read (sampled detection); fall back to all-text if a value breaks the detected types."""
-    opts = "delim='\\t', header=true, quote='', escape='', sample_size=200000, null_padding=true"
+    """Two formats exist: older scenarios are plain TSV, newer ones quote fields CSV-style ("" escapes).
+    Try quoted first, then unquoted; typed first, then all-text. Keep the first parse whose timestamps are valid."""
+    base = "delim='\\t', header=true, sample_size=200000"
     extra = ", filename=true, union_by_name=true" if many else ""
-    for o in (opts, opts + ", all_varchar=true"):
+    quoted = f"{base}, quote='\"', escape='\"'"  # quoted values may span lines (no null_padding then)
+    plain = f"{base}, quote='', escape='', null_padding=true"
+    attempts = [quoted, quoted + ", all_varchar=true", plain, plain + ", all_varchar=true"]
+    errors = []
+    for o in attempts:
         try:
             con.execute(f"COPY (SELECT * FROM read_csv({src!r}, {o}{extra})) TO '{dst}' "
                         "(FORMAT parquet, COMPRESSION zstd)")
-            return con.execute(f"SELECT count(*) FROM '{dst}'").fetchone()[0]
+            if _timestamps_ok(con, dst):
+                return con.execute(f"SELECT count(*) FROM '{dst}'").fetchone()[0]
+            errors.append(f"{o}: timestamps did not parse")
         except duckdb.Error as e:
-            last = e
-    raise RuntimeError(f"could not convert {src}: {last}")
+            errors.append(f"{o}: {str(e)[:120]}")
+    raise RuntimeError(f"could not convert {src}:\n  " + "\n  ".join(errors))
 
 
 def raw_rows(paths: list[Path]) -> int:
