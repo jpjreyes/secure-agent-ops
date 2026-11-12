@@ -127,7 +127,7 @@ def test_tool_lists_are_filtered_per_agent(env):
 def test_read_call_passes_through(env):
     r = run(env["url"] + "/mcp/telemetry/", env["tok"]("agent:investigator"),
             lambda s: s.call_tool("alerts", {}))
-    assert not r.is_error and "alert snapshots" in r.content[0].text
+    assert not r.is_error and "alert snapshots" in r.content[0].text and "<untrusted-data" in r.content[0].text
 
 
 def test_destructive_call_needs_approval_of_that_exact_call(env):

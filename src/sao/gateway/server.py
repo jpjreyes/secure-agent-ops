@@ -33,6 +33,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from sao.gateway.approvals import ApprovalChecker
 from sao.gateway.audit import AuditLog, call_hash
 from sao.gateway.policy import Policy, ToolInfo, tool_from_annotations
+from sao.gateway.screening import screen
 from sao.identity.verify import AuthError, Principal, Verifier
 
 _principal: contextvars.ContextVar[Principal | None] = contextvars.ContextVar("principal", default=None)
@@ -80,7 +81,8 @@ class BearerAuth:
 
 class Gateway:
     def __init__(self, verifier: Verifier, policy: Policy, audit_path: str | Path, upstreams: list[Upstream],
-                 approvals: ApprovalChecker | None = None):
+                 approvals: ApprovalChecker | None = None, screening: bool = True):
+        self.screening = screening
         self.verifier, self.policy, self.upstreams = verifier, policy, {u.name: u for u in upstreams}
         self.audit = AuditLog(audit_path)
         self.approvals = approvals or ApprovalChecker(verifier.trusted, verifier.audience)
@@ -116,9 +118,19 @@ class Gateway:
                                   decide_ms=decide_ms)
                 return _error(f"denied by policy: {', '.join(d.policies)}" + (f" ({why})" if info.destructive else ""))
             result = await up.session.call_tool(params.name, args)
+            hits = []
+            if self.screening and info.read_only:  # telemetry is untrusted text: spotlight + flag
+                content = []
+                for c in result.content:
+                    if getattr(c, "type", "") == "text":
+                        sc = screen(c.text, f"{up.name}/{params.name}")
+                        hits += sc.hits
+                        c = types.TextContent(type="text", text=sc.text)
+                    content.append(c)
+                result = types.CallToolResult(content=content, is_error=result.is_error)
             self.audit.append(**base, decision="allow", policies=list(d.policies), approval=why,
                               decide_ms=decide_ms, total_ms=round((time.perf_counter() - t0) * 1000, 1),
-                              upstream_error=bool(result.is_error))
+                              upstream_error=bool(result.is_error), screening_hits=hits)
             return result
 
         return Server(f"sao-gateway/{up.name}", on_list_tools=list_tools, on_call_tool=call_tool)

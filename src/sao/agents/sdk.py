@@ -29,6 +29,14 @@ def agent_id(role: str) -> str:
     return f"agent:{'investigator' if base in ('A', 'investigator') else base}"
 
 
+def _gateway_notice() -> str:
+    """Behind a screening gateway, agents are told how untrusted telemetry is marked."""
+    if GATEWAY is not None and getattr(GATEWAY, "screening", False):
+        from sao.gateway.screening import AGENT_NOTICE
+        return "\n\n" + AGENT_NOTICE
+    return ""
+
+
 def telemetry_server(snapshot: Path, role: str = "A") -> dict:
     if GATEWAY is not None:
         return GATEWAY.mcp("telemetry", agent=agent_id(role))
@@ -47,7 +55,7 @@ async def run_agent(*, role: str, system: str, prompt: str, snapshot: Path, mode
     t0 = time.monotonic()
     with tempfile.TemporaryDirectory(prefix=f"sao-{role}-") as cwd:
         opts = ClaudeAgentOptions(
-            system_prompt=system, model=model_id, effort=effort or API_DEFAULT_EFFORT.get(model_id),
+            system_prompt=system + _gateway_notice(), model=model_id, effort=effort or API_DEFAULT_EFFORT.get(model_id),
             tools=[], mcp_servers={"telemetry": telemetry_server(snapshot, role)} if allowed else {},
             strict_mcp_config=True, allowed_tools=[f"mcp__telemetry__{t}" for t in allowed],
             disallowed_tools=blocked, setting_sources=[], max_turns=max_turns, cwd=cwd, env=guard.sdk_env(),
