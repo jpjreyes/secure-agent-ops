@@ -98,3 +98,19 @@ Each entry: what we chose, the alternatives, and why. Numbers are filled in as t
   5. `run_config.json` pins models, turn caps and a hash of the prompts per results folder; a resume with a different
      configuration is refused (new `--tag` instead).
 - **Live episodes are not resumed mid-way** (the cluster keeps changing); they are discarded and re-recorded.
+
+## D9. Team v1 on the dev scenarios (2026-11-12; dev only, test untouched)
+- **Setup C (dev1), 10 dev scenarios × 1:** mean **0.65** vs setup A **0.35**; root cause found **8/10 vs 5/10**;
+  mean false positives 0.6 vs 0.9; **$0.19 vs $0.09** API-equivalent per run; 110 s vs 26 s. Ten C runs used ~3
+  points of the 5-hour window and ~1 point of the weekly one.
+- **Where the gain comes from:** the drafts (commander + investigators, i.e. setup B's answer) already score 0.70.
+  Parallel investigators with one signal each found chaos objects and flag changes the single agent missed (S21,
+  S80, S83).
+- **Verifier v1 hurt (0.70 → 0.65):** asked to "check and return the final diagnosis", it added causes (S11: a Kafka
+  restart that was part of applying the flag). **v2:** it rules on every candidate (draft + every possible cause the
+  investigators raised: cause / symptom / unrelated + explained_by) and code submits only causes no other cause
+  explains. Replayed on the same team runs: **0.70** (fixes S9's symptom, no regressions). On dev the verifier is
+  neutral-to-small; the test-set B vs C comparison measures it properly.
+- **Not tuned further (overfitting risk on 10 scenarios):** S26's root cause (an HTTPChaos object) appears nowhere in
+  its snapshot (no setup can name it); S33's second entity really had the same bad change; S1's object timestamps are
+  snapshot capture times, which hides that the load generator came first.
