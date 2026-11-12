@@ -1,0 +1,47 @@
+{
+  "": {
+    "entityTypes": {
+      "Agent": {},
+      "User": {},
+      "Tool": {
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "server": {"type": "String"},
+            "read_only": {"type": "Boolean"},
+            "destructive": {"type": "Boolean"}
+          }
+        }
+      }
+    },
+    "actions": {
+      "call": {
+        "appliesTo": {
+          "principalTypes": ["Agent"],
+          "resourceTypes": ["Tool"],
+          "context": {
+            "type": "Record",
+            "attributes": {
+              "scopes": {"type": "Set", "element": {"type": "String"}},
+              "chain": {"type": "Set", "element": {"type": "String"}},
+              "delegated": {"type": "Boolean"},
+              "on_behalf_of": {"type": "String", "required": false},
+              "approved": {"type": "Boolean"},
+              "args": {
+                "type": "Record",
+                "attributes": {
+                  "namespace": {"type": "String", "required": false},
+                  "name": {"type": "String", "required": false},
+                  "kind": {"type": "String", "required": false},
+                  "replicas": {"type": "Long", "required": false},
+                  "flag": {"type": "String", "required": false},
+                  "variant": {"type": "String", "required": false}
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

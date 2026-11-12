@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Multi-agent incident response behind an MCP security gateway"
 requires-python = ">=3.12"
 dependencies = [
+    "cedarpy>=4.12.2",
     "claude-agent-sdk>=0.2.180",
     "cryptography>=44",
     "duckdb>=2.0.0",
