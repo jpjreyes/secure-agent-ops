@@ -48,5 +48,21 @@ nothing here is changed after test-set results are seen.
 3. ~~More scenarios from ITBench-Lite~~: not available (its SRE scenarios are the same IDs).
 4. All 40 scenarios as a secondary figure, labeled "includes the 10 dev scenarios".
 
+## Live incidents (our own environment; written 2026-11-12, before any agent saw a live episode)
+- **Set:** the 19 faults in `src/sao/faults/catalog.py` (12 demo flags, 7 configuration faults), one recorded
+  episode each (`runs/live/<fault>-r1`), recorded on the 6-CPU VM. An episode is scored only if at least one of the
+  benchmark's service alerts fired after injection (`symptom_observed`); episodes without symptoms are listed, not
+  scored as misses.
+- **What runs:** setups A and C with the configuration frozen at commit c48e258 (team prompts and verifier v2, A's
+  prompt), 1 repeat first; 3 repeats if the measured quota allows (decided before scoring, written here).
+- **No tuning on live episodes.** Prompts and tools were developed on the 10 ITBench-AA dev scenarios only. If a live
+  result leads to a change, the changed version is reported separately as "after one fix", never mixed with the
+  first-contact numbers (same protocol as P4's held-out portal).
+- **Scoring:** the same scorer; ground truth from the fault catalog (root = the object that was changed: the
+  flagd-config ConfigMap for flags, the Deployment / Service / NetworkPolicy for configuration faults; the services
+  expected to show symptoms are listed as non-root groups).
+- **Reported:** mean score, root cause found, false positives, cost and time per run, per family (flag vs config).
+
 ## Change log
-- (none yet)
+- 2026-11-12: verifier v2 (rules on every candidate; submission computed in code), decided on dev only (repo
+  DECISIONS.md D9). Live-incident section added before any live result.

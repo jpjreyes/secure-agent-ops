@@ -36,6 +36,20 @@ from sao.llm import guard
 ROOT = Path(__file__).resolve().parents[1]
 SNAP, TRUTH = (ROOT / "data/itbench-aa" / d for d in ("snapshots", "truth"))
 RUNS = ROOT / "runs" / "itbench"
+LIVE = ROOT / "runs" / "live"  # recorded live incidents: <episode>/snapshot (agents) and <episode>/truth.yaml
+
+
+def snap_dir(sid: str) -> Path:
+    return LIVE / sid / "snapshot" if (LIVE / sid / "truth.yaml").exists() else SNAP / sid
+
+
+def live_episodes() -> list[str]:
+    """Recorded live episodes whose expected alerts fired (an episode without symptoms is reported, not scored)."""
+    out = []
+    for ep in sorted(LIVE.glob("*/episode.json")):
+        if json.loads(ep.read_text()).get("symptom_observed"):
+            out.append(ep.parent.name)
+    return out
 
 
 def team_config() -> dict:
@@ -61,13 +75,14 @@ def pin_config(out_dir: Path, cfg: dict) -> None:
 async def run_one(setup: str, sid: str, k: int, model: str, tag: str, cp) -> dict:
     if setup == "A":
         from sao.agents.single import diagnose
-        return await diagnose(SNAP / sid, model=model)
+        return await diagnose(snap_dir(sid), model=model)
     from sao.agents import team
-    return await team.diagnose(SNAP / sid, setup, f"{setup}-{tag}-{sid}-rep{k}", cp)
+    return await team.diagnose(snap_dir(sid), setup, f"{setup}-{tag}-{sid}-rep{k}", cp)
 
 
 def _truth(sid: str) -> Truth:
-    return Truth.from_yaml((TRUTH / f"{sid}.yaml").read_text())
+    live = LIVE / sid / "truth.yaml"
+    return Truth.from_yaml((live if live.exists() else TRUTH / f"{sid}.yaml").read_text())
 
 
 async def run_all(a, todo: list[tuple[str, int]], out_dir: Path) -> int:
@@ -128,7 +143,8 @@ async def run_all(a, todo: list[tuple[str, int]], out_dir: Path) -> int:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--setup", default="A", choices=["A", "B", "C"])
-    ap.add_argument("--split", choices=["dev", "test"])
+    ap.add_argument("--split", choices=["dev", "test", "live"],
+                    help="live = recorded live episodes with symptoms (runs/live), results under runs/itbench/live-*")
     ap.add_argument("--ids", nargs="*")
     ap.add_argument("--repeats", type=int, default=1)
     ap.add_argument("--model", default="sonnet", help="setup A only (the team's models are in sao.agents.team)")
@@ -138,14 +154,14 @@ def main() -> None:
                          "fits below the 80%% stop")
     a = ap.parse_args()
     split = json.loads((ROOT / "evals/split.json").read_text())
-    ids = a.ids or split[a.split or "dev"]
+    ids = a.ids or (live_episodes() if a.split == "live" else split[a.split or "dev"])
     if a.split == "test" or any(i in split["test"] for i in ids):
         if input("This touches TEST scenarios (scored once, see evals/PLAN.md). Type 'test' to continue: ") != "test":
             return
     if a.setup == "A":
-        out_dir = RUNS / f"A-{a.model}"
+        out_dir = RUNS / f"{'live-' if a.split == 'live' else ''}A-{a.model}"
     else:
-        out_dir = RUNS / f"{a.setup}-{a.tag}"
+        out_dir = RUNS / f"{'live-' if a.split == 'live' else ''}{a.setup}-{a.tag}"
         pin_config(out_dir, {"setup": a.setup, **team_config()})
     jobs = [(sid, k) for sid in ids for k in range(1, a.repeats + 1)]
     todo = [(s, k) for s, k in jobs if not (out_dir / s / f"rep{k}.json").exists()]

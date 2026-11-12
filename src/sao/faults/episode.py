@@ -77,6 +77,7 @@ def record(fault_id: str, baseline_s: int = 120, after_s: int = 30, hold: bool =
             input(f"[{fault_id}] fault active. Snapshot: {snap}\nPress Enter to revert … ")
         else:
             time.sleep(after_s)
+        info["complete"] = True  # only a normal finish; an interrupted episode is recorded again
     finally:
         try:  # the recording ends while the fault is still active (as in ITBench-AA snapshots)
             rec.terminate()
@@ -96,7 +97,11 @@ def record_all(baseline_s: int, rep: int = 1) -> None:
     """Record every fault once (episode runs/live/<fault>-r<rep>); finished episodes are skipped, so rerunning
     after a crash continues. A half-written episode (no episode.json) is deleted and recorded again."""
     import shutil
-    todo = [f for f in FAULTS if not (LIVE / f"{f}-r{rep}" / "episode.json").exists()]
+    def complete(fid: str) -> bool:
+        p = LIVE / f"{fid}-r{rep}" / "episode.json"
+        return p.exists() and json.loads(p.read_text()).get("complete", False)
+
+    todo = [f for f in FAULTS if not complete(f)]
     t0 = time.time()
     for i, fid in enumerate(todo, 1):
         ep = LIVE / f"{fid}-r{rep}"
