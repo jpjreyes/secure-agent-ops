@@ -13,7 +13,8 @@ EXEC = Principal("agent:executor", "user:oncall", ("agent:commander", "agent:exe
 EXEC_UNDELEGATED = Principal("agent:executor", None, (), frozenset({"telemetry:read", "cluster:write"}), "t", "i", 0)
 INV = Principal("agent:investigator", None, (), frozenset({"telemetry:read"}), "t", "i", 0)
 NO_SCOPE = Principal("agent:investigator", None, (), frozenset(), "t", "i", 0)
-ROLLBACK, SCALE, FLAG = (ToolInfo("cluster", n, False, True) for n in ("rollback_deployment", "scale_deployment", "set_flag"))
+ROLLBACK, SCALE, FLAG = (ToolInfo("cluster", n, False, True)
+                         for n in ("rollback_deployment", "scale_deployment", "set_flag"))
 OVERVIEW = ToolInfo("telemetry", "overview", True, False)
 OK = {"namespace": "otel-demo", "name": "checkout"}
 
@@ -42,7 +43,8 @@ def test_tool_list_is_filtered_per_agent():
     tools = [ROLLBACK, SCALE, FLAG, OVERVIEW]
     assert [t.name for t in POL.visible_tools(INV, tools)] == ["overview"]
     assert [t.name for t in POL.visible_tools(EXEC_UNDELEGATED, tools)] == ["overview"]
-    assert [t.name for t in POL.visible_tools(EXEC, tools)] == ["rollback_deployment", "scale_deployment", "set_flag", "overview"]
+    assert [t.name for t in POL.visible_tools(EXEC, tools)] == ["rollback_deployment", "scale_deployment", "set_flag",
+                                                               "overview"]
 
 
 def test_missing_annotations_are_treated_as_destructive():

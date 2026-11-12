@@ -19,7 +19,8 @@ from pathlib import Path
 import duckdb
 
 MAX_CELL = 160
-ERROR_WORDS = r"(?i)(error|exception|fail|refused|timeout|timed out|unavailable|denied|panic|oom|killed|crash|unreachable)"
+ERROR_WORDS = (r"(?i)(error|exception|fail|refused|timeout|timed out|unavailable|denied|panic|oom|killed|crash|"
+               r"unreachable)")
 VOLATILE_META = ("managedFields", "resourceVersion", "generation", "uid", "creationTimestamp", "selfLink")
 
 
@@ -88,7 +89,8 @@ class Snapshot:
         ev, ob, lg, sp = self._cols("events"), self._cols("objects"), self._cols("logs"), self._cols("traces")
         if "Body" in ev:
             self.con.execute(f"""CREATE VIEW ev AS SELECT Timestamp AS ts,
-                json_extract_string(Body,'$.object.type') AS type, json_extract_string(Body,'$.object.reason') AS reason,
+                json_extract_string(Body,'$.object.type') AS type,
+                json_extract_string(Body,'$.object.reason') AS reason,
                 coalesce(json_extract_string(Body,'$.object.involvedObject.kind'),
                          json_extract_string(Body,'$.object.regarding.kind')) AS kind,
                 coalesce(json_extract_string(Body,'$.object.involvedObject.name'),
@@ -96,7 +98,8 @@ class Snapshot:
                 coalesce(json_extract_string(Body,'$.object.involvedObject.namespace'),
                          json_extract_string(Body,'$.object.regarding.namespace'),
                          json_extract_string(Body,'$.object.metadata.namespace')) AS namespace,
-                coalesce(json_extract_string(Body,'$.object.message'), json_extract_string(Body,'$.object.note')) AS message,
+                coalesce(json_extract_string(Body,'$.object.message'),
+                         json_extract_string(Body,'$.object.note')) AS message,
                 try_cast(coalesce(json_extract_string(Body,'$.object.count'),
                                   json_extract_string(Body,'$.object.deprecatedCount')) AS INTEGER) AS count
                 FROM {p('events')} WHERE json_valid(Body)""")
@@ -110,7 +113,8 @@ class Snapshot:
                 SELECT Timestamp AS ts, CASE WHEN json_exists(Body,'$.object.kind') THEN json_extract(Body,'$.object')
                                              ELSE json(Body) END AS o FROM {p('objects')} WHERE json_valid(Body))
                 SELECT ts, json_extract_string(o,'$.kind') AS kind, json_extract_string(o,'$.metadata.name') AS name,
-                       coalesce(json_extract_string(o,'$.metadata.namespace'), '') AS namespace, o::VARCHAR AS body FROM b""")
+                       coalesce(json_extract_string(o,'$.metadata.namespace'), '') AS namespace,
+                       o::VARCHAR AS body FROM b""")
         else:
             self.con.execute(f"""CREATE VIEW obj AS SELECT timestamp AS ts, object_kind AS kind, object_name AS name,
                 coalesce(namespace, '') AS namespace, body FROM {p('objects')} WHERE json_valid(body)""")
@@ -134,8 +138,8 @@ class Snapshot:
                 span_id, parent_span_id AS parent_id, service_name AS service, span_name AS name, span_kind AS kind,
                 try_cast(duration AS DOUBLE) / 1e6 AS ms, lower(coalesce(status_code, '')) AS status,
                 status_message AS message FROM {p('traces')}""")
-        self.con.execute(f"""CREATE VIEW metrics AS SELECT timestamp AS ts, metric_name AS metric, value, pod_name AS pod,
-            service_name AS service, namespace, metric_type AS mtype FROM {p('metrics')}""")
+        self.con.execute(f"""CREATE VIEW metrics AS SELECT timestamp AS ts, metric_name AS metric, value,
+            pod_name AS pod, service_name AS service, namespace, metric_type AS mtype FROM {p('metrics')}""")
 
     def _q(self, sql: str, params: list | None = None) -> list[tuple]:
         # One cursor per query: a DuckDB connection must not be used by two threads at once, and the MCP server
@@ -257,7 +261,8 @@ class Snapshot:
             a, b = _flatten(vs[0][2]), _flatten(vs[-1][2])
             keys = sorted(x for x in set(a) | set(b) if a.get(x) != b.get(x))
             out.append(f"{ns}/{k}/{nm}: {len(vs)} versions, {vs[0][0]} → {vs[-1][0]}")
-            out.append(table(["field", "first", "last"], [(x, a.get(x, "(absent)"), b.get(x, "(absent)")) for x in keys]))
+            out.append(table(["field", "first", "last"],
+                             [(x, a.get(x, "(absent)"), b.get(x, "(absent)")) for x in keys]))
         return "\n".join(out)
 
     def get_object(self, kind: str, name: str, namespace: str | None = None, max_chars: int = 3000) -> str:

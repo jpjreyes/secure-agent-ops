@@ -48,9 +48,11 @@ def test_recorder_output_loads_in_snapshot_tools(tmp_path):
                              "service_name": "checkout", "span_name": "PlaceOrder", "span_kind": "Server",
                              "duration": "5000000", "status_code": "Error", "status_message": "dial tcp: i/o timeout"})
     r.rows["logs"].append({"timestamp": _iso(now - 10), "service_name": "checkout", "severity_text": "ERROR",
-                           "body": "failed to charge card", "k8s_pod_name": "checkout-abc", "k8s_namespace": "otel-demo"})
+                           "body": "failed to charge card", "k8s_pod_name": "checkout-abc",
+                           "k8s_namespace": "otel-demo"})
     for i in range(6):
-        r.rows["metrics"].append({"metric_name": "traces_span_metrics_calls_total", "timestamp": _iso(now - 60 + i * 10),
+        r.rows["metrics"].append({"metric_name": "traces_span_metrics_calls_total",
+                                  "timestamp": _iso(now - 60 + i * 10),
                                   "value": 0.0 if i < 3 else 1.0, "pod_name": "", "namespace": "otel-demo",
                                   "service_name": "checkout", "metric_type": "error_rate"})
     (tmp_path / "alerts" / "alerts_at_x.json").write_text(json.dumps({"data": {"alerts": [

@@ -77,7 +77,7 @@ class Truth:
     aliases: list[set[str]] = field(default_factory=list)
 
     @classmethod
-    def from_yaml(cls, text: str) -> "Truth":
+    def from_yaml(cls, text: str) -> Truth:
         g = yaml.safe_load(text)
         g = g.get("spec", g)  # some scenarios wrap the ground truth in a Kubernetes-style object
         groups = [Group(x["id"], x["kind"], x.get("namespace"), x.get("filter") or [], bool(x.get("root_cause")))

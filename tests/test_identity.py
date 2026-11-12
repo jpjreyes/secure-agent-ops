@@ -12,7 +12,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from sao.identity.app import TokenClient, create_app
-from sao.identity.issuer import ASSERTION_TYPE, CC, TX, AT_TYPE, Client, Issuer, OAuthError, Registry, make_assertion
+from sao.identity.issuer import ASSERTION_TYPE, AT_TYPE, CC, TX, Client, Issuer, OAuthError, Registry, make_assertion
 from sao.identity.keys import KmsSigner, LocalSigner, b64u, der_to_raw, raw_to_der, sign_jwt
 from sao.identity.verify import AuthError, Verifier
 

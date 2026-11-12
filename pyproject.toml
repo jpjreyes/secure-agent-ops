@@ -26,6 +26,13 @@ dev = ["pytest>=8", "ruff>=0.8"]
 [tool.ruff]
 line-length = 120
 
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E731"]  # small lambdas as local helpers are fine
+
+[tool.ruff.lint.per-file-ignores]
+"src/sao/agents/prompts.py" = ["E501"]  # Artificial Analysis' task prompt, verbatim
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

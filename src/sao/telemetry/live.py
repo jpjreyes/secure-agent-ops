@@ -303,8 +303,8 @@ class Recorder:
             con.execute(f"COPY (SELECT {sel} FROM {t}) TO '{tmp}' (FORMAT parquet)")
             os.replace(tmp, self.out / f"{t}.parquet")
         (self.out / "recorder.json").write_text(json.dumps(
-            {"started": _iso(self.t0), "last_poll": _iso(time.time()), "rows": {k: len(v) for k, v in self.rows.items()},
-             "errors": self.errors[-20:]}, indent=1))
+            {"started": _iso(self.t0), "last_poll": _iso(time.time()),
+             "rows": {k: len(v) for k, v in self.rows.items()}, "errors": self.errors[-20:]}, indent=1))
         (self.out / ".done").touch()
 
     def run(self, seconds: float | None = None) -> None:

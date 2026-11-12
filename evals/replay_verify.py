@@ -14,7 +14,6 @@ import asyncio
 import json
 import sys
 import time
-from pathlib import Path
 
 from evals.run_itbench import RUNS, SNAP, _truth
 from evals.score import score

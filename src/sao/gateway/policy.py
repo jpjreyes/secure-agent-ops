@@ -66,7 +66,7 @@ class Policy:
     def _annotation_ids(self) -> dict[str, str]:
         """Cedar names policies policy0, policy1…; map them to their @id annotations for readable audit records."""
         out = {}
-        for i, block in enumerate(json.loads(cedarpy.policies_to_json_str(self.text))["staticPolicies"].items()):
+        for _i, block in enumerate(json.loads(cedarpy.policies_to_json_str(self.text))["staticPolicies"].items()):
             pid, body = block
             out[pid] = (body.get("annotations") or {}).get("id", pid)
         return out

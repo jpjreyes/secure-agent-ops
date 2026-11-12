@@ -80,8 +80,8 @@ async def main() -> None:
     a = ap.parse_args()
     ep = a.episode
     snap = ep / "snapshot" if (ep / "snapshot").exists() else ep
-    alerts = json.loads((ep / "episode.json").read_text()).get("expected_alerts", []) if (ep / "episode.json").exists() \
-        else []
+    meta = ep / "episode.json"
+    alerts = json.loads(meta.read_text()).get("expected_alerts", []) if meta.exists() else []
     thread = a.thread or f"incident-{uuid.uuid4().hex[:8]}"
     async with AsyncPostgresSaver.from_conn_string(team.DSN) as cp:
         await cp.setup()

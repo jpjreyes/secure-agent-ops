@@ -287,7 +287,8 @@ async def plan_fix(state: TeamState) -> dict:
     from sao.agents import remediate
     diagnosis = state.get("final") or state.get("draft") or {}
     r = await _agent("plan_fix", role="executor", system=remediate.EXECUTOR, snapshot=Path(state["snapshot"]),
-                     prompt="Verified diagnosis:\n" + json.dumps(diagnosis, indent=1) + "\n\nPropose the remediation plan.",
+                     prompt="Verified diagnosis:\n" + json.dumps(diagnosis, indent=1)
+                            + "\n\nPropose the remediation plan.",
                      model=MODELS["executor"], schema=remediate.PLAN_SCHEMA, tools=None, max_turns=TURNS["executor"])
     plan = r["output"] or {"summary": "(planning failed)", "actions": []}
     return {"fix_plan": plan, "calls": [_record(r, "plan_fix")]}

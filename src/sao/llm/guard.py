@@ -26,8 +26,9 @@ STOP_AT = float(os.environ.get("CLAUDE_EVAL_STOP_AT", "0.80"))
 REMOVE = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK",
           "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR")
 KNOWN_HOOKS = {
-    "SessionStart": '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"This session may have '
-                    'run before. Call mcp__plugin_context-mode_context-mode__ctx_resume for a summary of what happened."}}',
+    "SessionStart": '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"This session may '
+                    'have run before. Call mcp__plugin_context-mode_context-mode__ctx_resume for a summary of what '
+                    'happened."}}',
     "UserPromptSubmit": "",
     "PostToolUse": "",  # runs after each tool call; empty output = the tool result reaches the model unchanged
 }
@@ -123,9 +124,11 @@ def check(msg) -> None:
         src = (msg.data or {}).get("apiKeySource")
         if src != "none":
             raise NotClean(f"not using the CLI login: apiKeySource={src!r}")
-    elif kind == "HookEventMessage" or (kind == "SystemMessage" and str(getattr(msg, "subtype", "")).startswith("hook")):
+    elif kind == "HookEventMessage" or (
+            kind == "SystemMessage" and str(getattr(msg, "subtype", "")).startswith("hook")):
         data = getattr(msg, "data", {}) or {}
-        event = getattr(msg, "hook_event_name", None) or data.get("hook_event") or str(data.get("hook_name", "")).split(":")[0]
+        event = (getattr(msg, "hook_event_name", None) or data.get("hook_event")
+                 or str(data.get("hook_name", "")).split(":")[0])
         sub = getattr(msg, "subtype", "") or data.get("subtype", "")
         if event not in KNOWN_HOOKS:
             raise NotClean(f"unexpected hook {event!r}")

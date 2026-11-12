@@ -1,0 +1,40 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:  # the LangGraph checkpointer, for the crash-resume tests
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: sao
+          POSTGRES_PASSWORD: sao-ci-only
+          POSTGRES_DB: sao
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U sao -d sao" --health-interval 2s --health-timeout 2s --health-retries 30
+    env:
+      SAO_PG_DSN: postgresql://sao:sao-ci-only@127.0.0.1:5432/sao
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install
+        run: uv sync --locked
+      - name: Lint
+        run: uv run ruff check src evals tests
+      - name: Cedar policies validate against the schema
+        run: uv run python -c "from sao.gateway.policy import Policy; Policy(); print('policies valid')"
+      - name: Tests (cluster, local data and model calls are skipped in CI)
+        run: uv run pytest -q -rs

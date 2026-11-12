@@ -17,7 +17,6 @@ from pathlib import Path
 
 import pytest
 import uvicorn
-
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters
 from mcp.client.streamable_http import create_mcp_http_client, streamable_http_client
@@ -161,7 +160,7 @@ def test_kill_switch_stops_a_valid_token(env):
     inv = env["tok"]("agent:investigator")
     env["revoked"].add("agent:investigator")
     try:
-        with pytest.raises(Exception):  # the HTTP layer refuses with 401 before MCP starts
+        with pytest.raises(BaseException):  # noqa: B017 - refused with 401 before MCP starts (client error type varies)
             run(env["url"] + "/mcp/telemetry/", inv, lambda s: s.list_tools())
     finally:
         env["revoked"].clear()
