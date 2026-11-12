@@ -176,7 +176,7 @@ def main() -> None:
         if input("This touches TEST scenarios (scored once, see evals/PLAN.md). Type 'test' to continue: ") != "test":
             return
     if a.setup == "A":
-        out_dir = RUNS / f"{'live-' if a.split == 'live' else ''}A-{a.model}"
+        out_dir = RUNS / f"{'live-' if a.split == 'live' else ''}A-{a.model}{'' if a.tag == 'v1' else '-' + a.tag}"
     else:
         out_dir = RUNS / f"{'live-' if a.split == 'live' else ''}{a.setup}-{a.tag}"
         pin_config(out_dir, {"setup": a.setup, "via_gateway": a.via_gateway, **team_config()})

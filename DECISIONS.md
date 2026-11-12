@@ -135,3 +135,13 @@ Each entry: what we chose, the alternatives, and why. Numbers are filled in as t
   context; human approval is a separate signed record checked by Cedar, never a token claim; the kill switch
   deny-lists agent ids and token ids; the orchestrator holding agent credentials is the trust root (documented in
   the threat model).
+
+## D11. Dev numbers re-measured after the concurrency fix (2026-11-12): the old baseline was depressed by a bug
+- **Bug:** the telemetry MCP server used one DuckDB connection from several threads; parallel tool calls (several
+  agents behind the gateway, or several calls in one agent turn) failed at random. Found by the first team run
+  through the gateway (13 of 56 calls failed); fixed with one cursor per query (test reproduces it).
+- **Re-measured, dev 10 × 1:** A **0.60** (8/10 root cause found, $0.07/run, 20 s) vs the earlier 0.35 (invalid);
+  C **0.75** (8/10, mean FP 0.4, $0.21/run, 93 s). Drafts 0.60 → verifier final 0.75: the verifier v2 now adds
+  +0.15 (S9, S11, S21). The team's advantage on dev is **+0.15**, not +0.30, at ~3× the cost and ~4.5× the time.
+- **Implication:** the honest headline will be decided on the 30 × 3 test set; cost per correct diagnosis is
+  reported next to the score. Earlier dev claims (D9) are superseded by these numbers.
