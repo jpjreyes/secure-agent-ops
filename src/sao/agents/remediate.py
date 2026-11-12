@@ -112,7 +112,9 @@ async def _call(url: str, headers: dict, tool: str, args: dict) -> tuple[bool, s
 async def execute(calls: list[dict], gw, approval: str, on_behalf_of: str) -> list[dict]:
     """Run approved calls in order; stop at the first failed precondition or call."""
     results = []
-    headers = {"Authorization": f"Bearer {gw.token('agent:executor', on_behalf_of)}", "X-SAO-Approval": approval}
+    from sao import tracing
+    headers = {"Authorization": f"Bearer {gw.token('agent:executor', on_behalf_of)}", "X-SAO-Approval": approval,
+               **tracing.traceparent()}
     for c in calls:
         ok, why = (await asyncio.to_thread(check_precondition, c["precondition"])) if c["precondition"] else \
             (True, "no precondition")

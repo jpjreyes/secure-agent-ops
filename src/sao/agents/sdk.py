@@ -39,7 +39,10 @@ def _gateway_notice() -> str:
 
 def telemetry_server(snapshot: Path, role: str = "A") -> dict:
     if GATEWAY is not None:
-        return GATEWAY.mcp("telemetry", agent=agent_id(role))
+        from sao import tracing
+        cfg = GATEWAY.mcp("telemetry", agent=agent_id(role))
+        cfg["headers"] |= tracing.traceparent()  # the gateway's spans become children of this agent's span
+        return cfg
     return {"type": "stdio", "command": sys.executable, "args": ["-m", "sao.mcp.telemetry_server"],
             "env": {"SAO_SNAPSHOT": str(snapshot)}}
 

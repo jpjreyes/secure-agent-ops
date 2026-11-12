@@ -20,6 +20,7 @@ from pathlib import Path
 
 from langgraph.types import Command
 
+from sao import tracing
 from sao.agents import sdk, team
 from sao.gateway.approvals import sign_approval
 from sao.gateway.local import ONCALL, running_gateway
@@ -60,10 +61,13 @@ async def run_incident(snapshot: Path, thread_id: str, approver: Approver, incid
                                                   "incident_alerts": incident_alerts}
     sdk.GATEWAY = gw
     try:
-        result = await graph.ainvoke(inp, config, durability="sync")
-        while result.get("__interrupt__"):
-            payload = result["__interrupt__"][0].value
-            result = await graph.ainvoke(Command(resume=approver(payload, gw.issuer)), config, durability="sync")
+        with tracing.span("incident", **{"sao.thread": thread_id, "sao.remediate": True}) as s:
+            result = await graph.ainvoke(inp, config, durability="sync")
+            while result.get("__interrupt__"):
+                payload = result["__interrupt__"][0].value
+                answer = approver(payload, gw.issuer)
+                tracing.set_attrs(s, **{"sao.approval": answer.get("decision"), "sao.approver": answer.get("approver")})
+                result = await graph.ainvoke(Command(resume=answer), config, durability="sync")
     finally:
         sdk.GATEWAY = None
     return result

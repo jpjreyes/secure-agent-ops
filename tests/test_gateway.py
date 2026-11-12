@@ -240,3 +240,37 @@ def test_oversized_output_is_cut_with_a_notice(env, monkeypatch):
                         if len(text) > limit else (text, False))
     r = run(env["url"] + "/mcp/telemetry/", env["tok"]("agent:investigator"), lambda s: s.call_tool("events", {}))
     assert not r.is_error and "cut by the gateway" in r.content[0].text
+
+
+def test_gateway_spans_are_children_of_the_calling_agent(env):
+    """Agents run inside the Claude CLI, which doesn't forward trace context: the orchestrator puts the agent span's
+    traceparent in the MCP headers and the gateway's decision span must come out as its child."""
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    from sao import tracing
+    exporter = InMemorySpanExporter()
+    if not tracing.setup(exporter=exporter):
+        pytest.skip("a tracer provider was already configured in this process")
+    with tracing.span("agent investigator:changes", kind="AGENT") as agent_span:
+        tp = tracing.traceparent()
+
+        async def call(s):
+            return await s.call_tool("alerts", {})
+        headers_token = env["tok"]("agent:investigator")
+
+        async def go():
+            from mcp.client.session import ClientSession
+            from mcp.client.streamable_http import create_mcp_http_client, streamable_http_client
+            hdr = {"Authorization": f"Bearer {headers_token}", **tp}
+            async with create_mcp_http_client(headers=hdr) as http, \
+                    streamable_http_client(env["url"] + "/mcp/telemetry/", http_client=http) as (r, w), \
+                    ClientSession(r, w) as s:
+                await s.initialize()
+                return await call(s)
+        assert not asyncio.run(go()).is_error
+    spans = {s.name: s for s in exporter.get_finished_spans()}
+    gw = spans["gateway telemetry/alerts"]
+    assert gw.parent is not None and gw.parent.span_id == agent_span.get_span_context().span_id
+    assert gw.context.trace_id == agent_span.get_span_context().trace_id
+    assert gw.attributes["sao.decision"] == "allow" and gw.attributes["sao.agent"] == "agent:investigator"
+    assert "read-only-tools" in gw.attributes["sao.policies"]

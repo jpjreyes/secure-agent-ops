@@ -30,6 +30,7 @@ from typing import Annotated, TypedDict
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
+from sao import tracing
 from sao.agents import sdk
 from sao.agents.prompts import DIAGNOSIS_SCHEMA, TASK
 from sao.llm import guard
@@ -211,7 +212,15 @@ async def _agent(node: str, **kw) -> dict:
     global _inflight
     _inflight += 1
     try:
-        return await sdk.run_agent(**kw)
+        with tracing.span(f"agent {kw.get('role')}", kind="AGENT", **{"sao.node": node,
+                          "gen_ai.request.model": sdk.MODELS.get(kw.get("model"), kw.get("model"))}) as s:
+            r = await sdk.run_agent(**kw)
+            tracing.set_attrs(s, **{"gen_ai.usage.input_tokens": r["input_tokens"],
+                                    "gen_ai.usage.output_tokens": r["output_tokens"],
+                                    "sao.cost_usd_api_equivalent": r["cost_usd_api_equivalent"],
+                                    "sao.turns": r["turns"], "sao.tool_calls": len(r["tool_calls"]),
+                                    "sao.stop": r["stop"]})
+            return r
     except guard.EvalStop as e:
         _inflight -= 1
         waited = 0.0
@@ -374,7 +383,8 @@ async def diagnose(snapshot: Path, setup: str, thread_id: str, checkpointer) -> 
         guard.before_run()
         inp = None if resumed else {"snapshot": str(snapshot), "setup": setup}
         try:
-            values = await graph.ainvoke(inp, config, durability="sync")
+            with tracing.span("incident", **{"sao.thread": thread_id, "sao.setup": setup, "sao.resumed": resumed}):
+                values = await graph.ainvoke(inp, config, durability="sync")
         except NodeStop as e:
             raise e.stop from None
     return team_result(values, setup) | {"resumed": resumed}

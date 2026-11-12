@@ -200,6 +200,8 @@ def main() -> None:
     ap.add_argument("--repeats", type=int, default=1)
     ap.add_argument("--model", default="sonnet", help="setup A only (the team's models are in sao.agents.team)")
     ap.add_argument("--tag", default="v1", help="B/C: names the results folder; change it when the team changes")
+    ap.add_argument("--confirm-test", action="store_true",
+                    help="non-interactive confirmation for an approved test-set run (background driver)")
     ap.add_argument("--remediate", action="store_true",
                     help="live split, setup C: also produce and score the executor's plan (dry run, scored offline)")
     ap.add_argument("--via-gateway", action="store_true",
@@ -211,7 +213,8 @@ def main() -> None:
     split = json.loads((ROOT / "evals/split.json").read_text())
     ids = a.ids or (live_episodes() if a.split == "live" else split[a.split or "dev"])
     if a.split == "test" or any(i in split["test"] for i in ids):
-        if input("This touches TEST scenarios (scored once, see evals/PLAN.md). Type 'test' to continue: ") != "test":
+        if not a.confirm_test and input("This touches TEST scenarios (scored once, see evals/PLAN.md). "
+                                        "Type 'test' to continue: ") != "test":
             return
     if a.setup == "A":
         out_dir = RUNS / f"{'live-' if a.split == 'live' else ''}A-{a.model}{'' if a.tag == 'v1' else '-' + a.tag}"

@@ -30,6 +30,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Mount
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from sao import tracing
 from sao.gateway.approvals import ApprovalChecker
 from sao.gateway.audit import AuditLog, call_hash
 from sao.gateway.killswitch import KillSwitch
@@ -40,6 +41,8 @@ from sao.identity.verify import AuthError, Principal, Verifier
 
 _principal: contextvars.ContextVar[Principal | None] = contextvars.ContextVar("principal", default=None)
 _approval: contextvars.ContextVar[str | None] = contextvars.ContextVar("approval", default=None)
+_trace_headers: contextvars.ContextVar[dict | None] = contextvars.ContextVar("trace_headers", default=None)
+_rec: contextvars.ContextVar[dict | None] = contextvars.ContextVar("audit_record", default=None)  # this call's
 
 
 @dataclass
@@ -74,11 +77,13 @@ class BearerAuth:
                                 headers={"WWW-Authenticate": 'Bearer error="invalid_token"'})
             return await resp(scope, receive, send)
         t1, t2 = _principal.set(p), _approval.set(headers.get("x-sao-approval"))
+        t3 = _trace_headers.set({k: v for k, v in headers.items() if k in ("traceparent", "tracestate")})
         try:
             await self.app(scope, receive, send)
         finally:
             _principal.reset(t1)
             _approval.reset(t2)
+            _trace_headers.reset(t3)
 
 
 class Gateway:
@@ -107,7 +112,24 @@ class Gateway:
             return types.ListToolsResult(tools=visible)
 
         async def call_tool(ctx, params: types.CallToolRequestParams) -> types.CallToolResult:
+            with tracing.span(f"gateway {up.name}/{params.name}", kind="TOOL",
+                              parent_headers=_trace_headers.get() or None) as s:
+                result = await call_tool_inner(params)
+                rec = _rec.get() or {}
+                tracing.set_attrs(s, **{"sao.agent": rec.get("agent"), "sao.decision": rec.get("decision"),
+                                        "sao.policies": rec.get("policies"),
+                                        "sao.on_behalf_of": rec.get("on_behalf_of"),
+                                        "sao.decide_ms": rec.get("decide_ms"), "sao.audit_seq": rec.get("seq"),
+                                        "sao.screening_hits": len(rec.get("screening_hits") or [])})
+                return result
+
+        async def call_tool_inner(params: types.CallToolRequestParams) -> types.CallToolResult:
             t0 = time.perf_counter()
+
+            def log(**kw) -> dict:
+                rec = self.audit.append(**kw)
+                _rec.set(rec)
+                return rec
             p = _principal.get()
             args = dict(params.arguments or {})
             tool = next((t for t in up.tools if t.name == params.name), None)
@@ -115,21 +137,21 @@ class Gateway:
                         token_id=p.token_id, server=up.name, tool=params.name, args=args,
                         call_hash=call_hash(up.name, params.name, args))
             if tool is None:
-                self.audit.append(**base, decision="deny", policies=["unknown-tool"])
+                log(**base, decision="deny", policies=["unknown-tool"])
                 return _error(f"unknown tool {params.name}")
             info = up.info(tool)
             if self.killswitch and self.killswitch.tool_disabled(info.uid):
-                self.audit.append(**base, decision="deny", policies=["kill-switch"])
+                log(**base, decision="deny", policies=["kill-switch"])
                 return _error(f"denied: {info.uid} is disabled by the kill switch")
             if not self.limiter.allow(p.agent):
-                self.audit.append(**base, decision="deny", policies=["rate-limit"])
+                log(**base, decision="deny", policies=["rate-limit"])
                 return _error("denied: rate limit for this agent; slow down and narrow your queries")
             approved, why = (False, "not destructive") if not info.destructive else self.approvals.approved(
                 _approval.get(), up.name, params.name, args, p.on_behalf_of)
             d = self.policy.authorize(p, info, args, approved)
             decide_ms = round((time.perf_counter() - t0) * 1000, 2)
             if not d.allowed:
-                self.audit.append(**base, decision="deny", policies=list(d.policies), approval=why,
+                log(**base, decision="deny", policies=list(d.policies), approval=why,
                                   decide_ms=decide_ms)
                 return _error(f"denied by policy: {', '.join(d.policies)}" + (f" ({why})" if info.destructive else ""))
             result = await up.session.call_tool(params.name, args)
@@ -160,7 +182,7 @@ class Gateway:
                     structured = {**structured, "result": content[0].text}
                 result = types.CallToolResult(content=content, structured_content=structured,
                                               is_error=result.is_error)
-            self.audit.append(**base, decision="allow", policies=list(d.policies), approval=why,
+            log(**base, decision="allow", policies=list(d.policies), approval=why,
                               decide_ms=decide_ms, total_ms=round((time.perf_counter() - t0) * 1000, 1),
                               upstream_error=bool(result.is_error), screening_hits=hits, output_cut=cut)
             return result
