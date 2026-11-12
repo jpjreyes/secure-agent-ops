@@ -24,9 +24,13 @@ nothing here is changed after test-set results are seen.
 | C | Commander + investigators + verifier | 30 × 3 |
 
 ## Scoring
-- ITBench-AA's metric: per run, precision of the submitted root-cause entities if every ground-truth root cause is
-  found, else 0; averaged over runs and scenarios. Entity matching follows the ground truth's groups, filters and
-  aliases (implemented in `evals/score.py`, unit-tested on hand-written submissions before any agent run).
+- ITBench-AA's metric and Artificial Analysis' published grading rules (`evals/score.py`, unit-tested): entities as
+  `namespace/Kind/name`; Deployment ≡ Pod for the same workload; chaos-mesh kinds interchangeable for the same
+  experiment; alias groups merged into scoring groups (counted once); 0 if any root-cause group is missed, else
+  TP / (TP + FP). AA normalizes names with an LLM judge; ours is rule-based (possibly stricter) and identical for
+  every setup.
+- Task statement: AA's generation prompt (`evals/aa_prompt.md`) for every setup, shell instructions replaced by
+  our read-only tools.
 - Headline: C vs A, paired by scenario, with a bootstrap 95% interval over scenarios.
 - Also reported: recall-only rate, mean false positives, turns, tokens and API-equivalent cost per run, wall time.
 - The public leaderboard (59 tasks incl. 19 private, Stirrup harness) is cited as context only.

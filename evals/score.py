@@ -1,19 +1,19 @@
 """ITBench-AA scoring: precision at full recall over root-cause entities.
 
-A submission is a list of entities {"kind", "name", "namespace"?}. Per run:
-  - every ground-truth root-cause group must be hit by some submitted entity, else the run scores 0;
-  - otherwise the score is precision = true positives / submitted entities.
+Follows Artificial Analysis' published grading rules (methodology page, ITBench-AA section), with their LLM
+normalization step replaced by deterministic rules that encode the same instructions:
 
-Matching is deterministic and uses the ground truth's own definitions:
-  - an entity hits a group when the kinds are equal (case-insensitive), the namespaces agree (when both are given),
-    and the name full-matches one of the group's `filter` regexes (or, with no filter, equals the group id with any
-    trailing "-<n>" removed);
-  - `aliases` lists groups that name the same thing (e.g. a pod and its service), so hitting an alias of a root-cause
-    group counts as hitting that root cause.
-Duplicate entities (same kind/namespace/name) are counted once.
+  - Submissions are `contributing_factors` with `name: "namespace/Kind/name"`.
+  - A submitted entity matches a ground-truth group when namespace agrees, the kind is compatible, and the name
+    full-matches one of the group's `filter` regexes (or, with no filter, equals the group id minus a "-<n>" suffix).
+  - Kind compatibility: same kind; Deployment ≡ Pod when the workload name corresponds; any chaos-mesh kind
+    (Schedule, NetworkChaos, StressChaos, ...) ≡ any other chaos-mesh kind when name and namespace correspond.
+  - Alias groups are merged into scoring groups; a scoring group is a root-cause target if any member is a root cause.
+    Several predictions in the same scoring group count once.
+  - Score per run: 0.0 if any root-cause scoring group is missed, else TP / (TP + FP), where unmatched predictions
+    and (distinct) non-root scoring groups count as false positives.
 
-Artificial Analysis normalizes entity names with an LLM before matching; this matcher is stricter, so absolute scores
-can be slightly lower than theirs. Every setup we compare uses this same scorer.
+Being rule-based it can be stricter than an LLM judge on unusual spellings; every setup we compare uses it.
 """
 
 from __future__ import annotations
@@ -22,6 +22,23 @@ import re
 from dataclasses import dataclass, field
 
 import yaml
+
+CHAOS_KINDS = {"schedule", "networkchaos", "stresschaos", "httpchaos", "jvmchaos", "podchaos", "iochaos",
+               "timechaos", "dnschaos", "kernelchaos", "workflow"}
+POD_SUFFIX = re.compile(r"-[a-z0-9]{6,10}-[a-z0-9]{5}$")  # deployment pods: <workload>-<rs hash>-<pod hash>
+FAKE_POD = "-5d8f7c9b6d-abcde"
+
+
+def parse_entity(e: dict | str) -> dict:
+    """Accept {"name": "ns/Kind/name"}, a bare "ns/Kind/name" string, or {"kind","name","namespace"}."""
+    if isinstance(e, str):
+        e = {"name": e}
+    name = str(e.get("name", "")).strip()
+    parts = name.split("/")
+    if len(parts) == 3 and not e.get("kind"):
+        ns, kind, nm = parts
+        return {"namespace": None if ns == "cluster" else ns, "kind": kind, "name": nm}
+    return {"namespace": e.get("namespace"), "kind": str(e.get("kind", "")), "name": name}
 
 
 @dataclass
@@ -32,16 +49,23 @@ class Group:
     filters: list[str]
     root_cause: bool
 
-    def matches(self, e: dict) -> bool:
-        if str(e.get("kind", "")).lower() != self.kind.lower():
-            return False
-        ns = e.get("namespace")
-        if ns and self.namespace and ns != self.namespace:
-            return False
-        name = str(e.get("name", "")).strip()
+    def _name_ok(self, name: str) -> bool:
         if self.filters:
             return any(re.fullmatch(f, name) for f in self.filters)
         return name == re.sub(r"-\d+$", "", self.id)
+
+    def matches(self, e: dict) -> bool:
+        ns = e.get("namespace")
+        if ns and self.namespace and ns != self.namespace:
+            return False
+        sk, gk, name = e["kind"].lower(), self.kind.lower(), e["name"]
+        if sk == gk or (sk in CHAOS_KINDS and gk in CHAOS_KINDS):
+            return self._name_ok(name)
+        if sk == "deployment" and gk == "pod":  # a deployment matches its pods
+            return self._name_ok(name + FAKE_POD)
+        if sk == "pod" and gk == "deployment":
+            return self._name_ok(POD_SUFFIX.sub("", name))
+        return False
 
 
 @dataclass
@@ -57,17 +81,24 @@ class Truth:
                   for x in g.get("groups", [])]
         return cls(groups, [set(a) for a in g.get("aliases") or []])
 
-    def roots(self) -> list[Group]:
-        return [g for g in self.groups if g.root_cause]
+    def scoring_groups(self) -> dict[str, str]:
+        """group id → id of its merged scoring group (union of overlapping alias sets)."""
+        parent = {g.id: g.id for g in self.groups}
 
-    def credited_root(self, e: dict) -> str | None:
-        """The root-cause group id this entity counts for, or None (a false positive)."""
-        hit = {g.id for g in self.groups if g.matches(e)}
-        for r in self.roots():
-            same = {r.id}.union(*[a for a in self.aliases if r.id in a])
-            if hit & same:
-                return r.id
-        return None
+        def find(x: str) -> str:
+            while parent.setdefault(x, x) != x:
+                x = parent[x]
+            return x
+
+        for alias in self.aliases:
+            ids = sorted(alias)
+            for other in ids[1:]:
+                parent[find(other)] = find(ids[0])
+        return {gid: find(gid) for gid in parent}
+
+    def root_targets(self) -> set[str]:
+        sg = self.scoring_groups()
+        return {sg[g.id] for g in self.groups if g.root_cause}
 
 
 @dataclass
@@ -80,16 +111,21 @@ class Score:
     missed: list[str]
 
 
-def score(truth: Truth, submission: list[dict]) -> Score:
-    seen, entities = set(), []
-    for e in submission:
-        key = (str(e.get("kind", "")).lower(), e.get("namespace") or "", str(e.get("name", "")).strip())
-        if key not in seen:
-            seen.add(key)
-            entities.append(e)
-    credited = [truth.credited_root(e) for e in entities]
-    tp = sum(c is not None for c in credited)
-    fp = len(entities) - tp
-    missed = [r.id for r in truth.roots() if r.id not in credited]
-    precision = tp / len(entities) if entities else 0.0
+def score(truth: Truth, submission: list[dict | str]) -> Score:
+    sg, roots = truth.scoring_groups(), truth.root_targets()
+    hit_groups: list[str] = []
+    unmatched = 0
+    for raw in submission:
+        e = parse_entity(raw)
+        matched = [g for g in truth.groups if g.matches(e)]
+        if not matched:
+            unmatched += 1
+            continue
+        targets = {sg[g.id] for g in matched}
+        hit_groups.append(sorted(targets & roots)[0] if targets & roots else sorted(targets)[0])
+    distinct = set(hit_groups)
+    tp = len(distinct & roots)
+    fp = len(distinct - roots) + unmatched
+    missed = sorted(roots - distinct)
+    precision = tp / (tp + fp) if tp + fp else 0.0
     return Score(0.0 if missed else precision, not missed, precision, tp, fp, missed)
