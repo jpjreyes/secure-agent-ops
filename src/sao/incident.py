@@ -91,9 +91,12 @@ async def main() -> None:
         await cp.setup()
         with running_gateway(snap, ep / "gateway" / thread, cluster=True, dry_run=a.dry_run) as gw:
             r = await run_incident(snap, thread, terminal_approver, alerts, cp, gw)
-    print(json.dumps({k: r.get(k) for k in ("final", "fix_plan", "decision", "action_results", "outcome")},
-                     indent=1, default=str)[:6000])
-    print(f"thread {thread}; audit log: {ep / 'gateway' / thread / 'audit.jsonl'}")
+    from sao.report import build
+    out = ep / "gateway" / thread
+    (out / "report.md").write_text(build(r, snap, out / "audit.jsonl", title=ep.name))
+    print(json.dumps({k: r.get(k) for k in ("final", "decision", "action_results", "outcome")},
+                     indent=1, default=str)[:3000])
+    print(f"thread {thread}\nreport: {out / 'report.md'}\naudit log: {out / 'audit.jsonl'}")
 
 
 if __name__ == "__main__":
