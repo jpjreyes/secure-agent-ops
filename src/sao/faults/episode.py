@@ -41,6 +41,33 @@ def firing(snapshot: Path) -> set[tuple[str, str]]:
             if a.get("state") == "firing"}
 
 
+def _alerts_by_time(snapshot: Path) -> list[tuple[float, set[tuple[str, str]]]]:
+    out = []
+    for f in sorted(glob.glob(str(snapshot / "alerts" / "*.json"))):
+        stamp = Path(f).stem.removeprefix("alerts_at_")  # 2026-11-12T19-14-43.616290Z
+        day, clock = stamp.split("T")
+        ts = datetime.strptime(f"{day}T{clock.replace('-', ':')}", "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=UTC)
+        try:
+            d = json.loads(Path(f).read_text())
+        except json.JSONDecodeError:
+            continue
+        out.append((ts.timestamp(), {(a["labels"].get("alertname"), a["labels"].get("service_name", ""))
+                                     for a in d["data"]["alerts"] if a.get("state") == "firing"}))
+    return out
+
+
+def assess(snapshot: Path, injected_at: float, expected: list[str]) -> dict:
+    """Which service alerts appeared after injection that were never firing before it (baseline = every alert seen
+    at any time before injection, so flapping alerts don't count), and which of them are on expected services."""
+    series = _alerts_by_time(snapshot)
+    before = set().union(*[a for t, a in series if t < injected_at]) if series else set()
+    after = set().union(*[a for t, a in series if t >= injected_at]) if series else set()
+    new = {a for a in after - before if a[0] in ("RequestErrorRate", "RequestLatency")}
+    on_expected = sorted(a for a in new if a[1] in expected)
+    return {"new_alerts": sorted(new), "expected_alerts": on_expected, "symptom_observed": bool(on_expected),
+            "baseline_alerts": sorted(before)}
+
+
 def record(fault_id: str, baseline_s: int = 120, after_s: int = 30, hold: bool = False,
            name: str | None = None) -> Path:
     f = FAULTS[fault_id]
@@ -71,8 +98,7 @@ def record(fault_id: str, baseline_s: int = 120, after_s: int = 30, hold: bool =
             print(f"  {int(time.time() - info['injected_at'])}s: new alerts {sorted(seen) or '-'}", flush=True)
             if seen and time.time() > info["injected_at"] + 90:  # let the picture develop a little
                 break
-        info["new_alerts"] = sorted(seen)
-        info["symptom_observed"] = bool(seen)
+        info.update(assess(snap, info["injected_at"], f.symptoms))
         if hold:
             input(f"[{fault_id}] fault active. Snapshot: {snap}\nPress Enter to revert … ")
         else:

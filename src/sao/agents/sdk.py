@@ -19,7 +19,19 @@ MODELS = {"haiku": "claude-haiku-5-5", "sonnet": "claude-sonnet-5-5", "opus": "c
 API_DEFAULT_EFFORT = {"claude-haiku-5-5": "medium", "claude-sonnet-5-5": "high", "claude-opus-5-5": "medium"}
 
 
-def telemetry_server(snapshot: Path) -> dict:
+GATEWAY = None  # a sao.gateway.local.GatewayHandle while an incident runs through the gateway (set by the runner)
+
+
+def agent_id(role: str) -> str:
+    """Agent identity at the gateway: investigator:<signal> → agent:investigator; the single agent of setup A is
+    read-only like an investigator."""
+    base = role.split(":")[0]
+    return f"agent:{'investigator' if base in ('A', 'investigator') else base}"
+
+
+def telemetry_server(snapshot: Path, role: str = "A") -> dict:
+    if GATEWAY is not None:
+        return GATEWAY.mcp("telemetry", agent=agent_id(role))
     return {"type": "stdio", "command": sys.executable, "args": ["-m", "sao.mcp.telemetry_server"],
             "env": {"SAO_SNAPSHOT": str(snapshot)}}
 
@@ -36,7 +48,7 @@ async def run_agent(*, role: str, system: str, prompt: str, snapshot: Path, mode
     with tempfile.TemporaryDirectory(prefix=f"sao-{role}-") as cwd:
         opts = ClaudeAgentOptions(
             system_prompt=system, model=model_id, effort=effort or API_DEFAULT_EFFORT.get(model_id),
-            tools=[], mcp_servers={"telemetry": telemetry_server(snapshot)} if allowed else {},
+            tools=[], mcp_servers={"telemetry": telemetry_server(snapshot, role)} if allowed else {},
             strict_mcp_config=True, allowed_tools=[f"mcp__telemetry__{t}" for t in allowed],
             disallowed_tools=blocked, setting_sources=[], max_turns=max_turns, cwd=cwd, env=guard.sdk_env(),
             include_hook_events=True, output_format={"type": "json_schema", "schema": schema})

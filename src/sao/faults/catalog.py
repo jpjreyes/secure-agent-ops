@@ -193,3 +193,9 @@ FAULTS: dict[str, Fault] = {f.id: f for f in [
 for _f in FAULTS.values():
     if _f.family == "config" and _f.settle_s == 150:
         _f.settle_s = 300
+
+# Every user request enters through frontend-proxy → frontend, so a fault users feel at the frontend is also expected
+# to show at the proxy (ITBench-AA's ground truth lists frontend-proxy as a symptom the same way).
+for _f in FAULTS.values():
+    if "frontend" in _f.symptoms and "frontend-proxy" not in _f.symptoms:
+        _f.symptoms.append("frontend-proxy")

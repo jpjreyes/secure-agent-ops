@@ -101,7 +101,22 @@ async def run_all(a, todo: list[tuple[str, int]], out_dir: Path) -> int:
             try:
                 guard.before_run(reserve=a.reserve)
                 start = time.time()
-                r = await run_one(a.setup, sid, k, a.model, a.tag, cp)
+                if a.via_gateway:  # every tool call of every agent through the gateway; audit log per episode
+                    from sao.agents import sdk
+                    from sao.gateway import audit as audit_mod
+                    from sao.gateway.local import running_gateway
+                    gw_dir = out_dir / sid / f"rep{k}-gateway"
+                    with running_gateway(snap_dir(sid), gw_dir) as gw:
+                        sdk.GATEWAY = gw
+                        try:
+                            r = await run_one(a.setup, sid, k, a.model, a.tag, cp)
+                        finally:
+                            sdk.GATEWAY = None
+                    ok, msg = audit_mod.verify(gw.audit_path)
+                    r["gateway"] = {"audit": str(gw.audit_path.relative_to(ROOT)), "audit_chain_ok": ok,
+                                    "audit_check": msg}
+                else:
+                    r = await run_one(a.setup, sid, k, a.model, a.tag, cp)
                 r["wall_s"] = round(time.time() - start, 1)
             except guard.QuotaStop as e:
                 print(f"STOPPED before finishing {sid} rep{k}: {e}", flush=True)
@@ -149,6 +164,8 @@ def main() -> None:
     ap.add_argument("--repeats", type=int, default=1)
     ap.add_argument("--model", default="sonnet", help="setup A only (the team's models are in sao.agents.team)")
     ap.add_argument("--tag", default="v1", help="B/C: names the results folder; change it when the team changes")
+    ap.add_argument("--via-gateway", action="store_true",
+                    help="B/C: route every agent tool call through the MCP gateway (identity, Cedar, audit)")
     ap.add_argument("--reserve", type=float, default=0.0,
                     help="fraction of the usage window one episode needs (measured); an episode starts only if it "
                          "fits below the 80%% stop")
@@ -162,7 +179,7 @@ def main() -> None:
         out_dir = RUNS / f"{'live-' if a.split == 'live' else ''}A-{a.model}"
     else:
         out_dir = RUNS / f"{'live-' if a.split == 'live' else ''}{a.setup}-{a.tag}"
-        pin_config(out_dir, {"setup": a.setup, **team_config()})
+        pin_config(out_dir, {"setup": a.setup, "via_gateway": a.via_gateway, **team_config()})
     jobs = [(sid, k) for sid in ids for k in range(1, a.repeats + 1)]
     todo = [(s, k) for s, k in jobs if not (out_dir / s / f"rep{k}.json").exists()]
     print(f"{len(todo)} runs to do ({len(jobs) - len(todo)} already done) → {out_dir.relative_to(ROOT)}", flush=True)

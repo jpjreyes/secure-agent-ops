@@ -138,7 +138,13 @@ class Snapshot:
             service_name AS service, namespace, metric_type AS mtype FROM {p('metrics')}""")
 
     def _q(self, sql: str, params: list | None = None) -> list[tuple]:
-        return self.con.execute(sql, params or []).fetchall()
+        # One cursor per query: a DuckDB connection must not be used by two threads at once, and the MCP server
+        # runs concurrent tool calls (several agents share one server behind the gateway).
+        cur = self.con.cursor()
+        try:
+            return cur.execute(sql, params or []).fetchall()
+        finally:
+            cur.close()
 
     # ---------- tools ----------
     def overview(self) -> str:

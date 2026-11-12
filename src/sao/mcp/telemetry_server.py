@@ -10,6 +10,7 @@ Run:  SAO_SNAPSHOT=data/itbench-aa/snapshots/Scenario-24 uv run python -m sao.mc
 from __future__ import annotations
 
 import os
+import threading
 from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
@@ -25,6 +26,9 @@ _snap: Snapshot | None = None
 _stamp: float | None = None
 
 
+_lock = threading.Lock()
+
+
 def snap() -> Snapshot:
     """The incident's data. A live recording rewrites its files every poll: reopen when it has, so each call sees
     the cluster as of the last poll. A benchmark snapshot never changes."""
@@ -32,9 +36,10 @@ def snap() -> Snapshot:
     path = Path(os.environ["SAO_SNAPSHOT"])
     marker = path / "recorder.json"
     stamp = marker.stat().st_mtime if marker.exists() else None
-    if _snap is None or stamp != _stamp:
-        _snap, _stamp = Snapshot(path), stamp
-    return _snap
+    with _lock:  # concurrent calls must not reload (and replace) the snapshot at the same time
+        if _snap is None or stamp != _stamp:
+            _snap, _stamp = Snapshot(path), stamp
+        return _snap
 
 
 @server.tool(annotations=READ_ONLY)
