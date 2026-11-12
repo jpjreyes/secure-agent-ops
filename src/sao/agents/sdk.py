@@ -10,7 +10,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from claude_agent_sdk import ClaudeAgentOptions, query
+from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKError, query
 
 from sao.llm import guard
 from sao.telemetry.snapshot import TOOLS
@@ -41,15 +41,20 @@ async def run_agent(*, role: str, system: str, prompt: str, snapshot: Path, mode
             disallowed_tools=blocked, setting_sources=[], max_turns=max_turns, cwd=cwd, env=guard.sdk_env(),
             include_hook_events=True, output_format={"type": "json_schema", "schema": schema})
         calls, result = [], None
-        async for msg in query(prompt=prompt, options=opts):
-            guard.check(msg)
-            kind = type(msg).__name__
-            if kind == "AssistantMessage":
-                for b in msg.content:
-                    if type(b).__name__ == "ToolUseBlock":
-                        calls.append({"tool": b.name.split("__")[-1], "input": b.input})
-            elif kind == "ResultMessage":
-                result = msg
+        try:
+            async for msg in query(prompt=prompt, options=opts):
+                guard.check(msg)
+                kind = type(msg).__name__
+                if kind == "AssistantMessage":
+                    for b in msg.content:
+                        if type(b).__name__ == "ToolUseBlock":
+                            calls.append({"tool": b.name.split("__")[-1], "input": b.input})
+                elif kind == "ResultMessage":
+                    result = msg
+        except ClaudeSDKError as e:
+            # The SDK raises when the agent hits its turn cap; that is a failed answer, not a crash of the run.
+            if result is None or "maximum number of turns" not in str(e):
+                raise
     if result is None:
         raise RuntimeError(f"{role}: the agent ended without a result")
     usage = result.usage or {}

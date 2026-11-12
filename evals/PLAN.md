@@ -66,3 +66,6 @@ nothing here is changed after test-set results are seen.
 ## Change log
 - 2026-11-12: verifier v2 (rules on every candidate; submission computed in code), decided on dev only (repo
   DECISIONS.md D9). Live-incident section added before any live result.
+- 2026-11-12: request capture done before any scored run (`evals/CAPTURE.md`): system prompt byte-identical to ours
+  after the SDK's standard line, user message exactly ours, only our tools, pinned model and effort. Turn-cap stops
+  are now a failed answer for that agent instead of a crash of the episode.

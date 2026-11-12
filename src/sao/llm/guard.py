@@ -57,10 +57,18 @@ def read_token() -> str:
     return "".join(TOKEN.read_text().split())
 
 
+CAPTURE_URL: str | None = None  # set by evals/capture.py: a request-logging proxy on loopback, never anything else
+
+
 def sdk_env() -> dict[str, str]:
     """Environment for the SDK's CLI subprocess. Also scrubs API-key variables from this process."""
     for k in REMOVE:
         os.environ.pop(k, None)
+    extra = {}
+    if CAPTURE_URL:
+        if not CAPTURE_URL.startswith("http://127.0.0.1:"):
+            raise NotClean(f"capture proxy must be on loopback: {CAPTURE_URL}")
+        extra["ANTHROPIC_BASE_URL"] = CAPTURE_URL
     if not (TOKEN.exists() and CONFIG.is_dir()):
         raise NotClean(f"isolated CLI setup missing ({TOKEN}, {CONFIG}); run `claude setup-token` and save it there")
     tok = read_token()
@@ -70,7 +78,7 @@ def sdk_env() -> dict[str, str]:
     # (which our agents don't have). Its own setting raises that limit, so tool results reach the model unchanged;
     # the guard still checks that every PostToolUse hook returns empty output.
     return {"CLAUDE_CONFIG_DIR": str(CONFIG), "CLAUDE_CODE_OAUTH_TOKEN": tok,
-            "CTX_REPLACE_TRIGGER_BYTES": str(10**12)}
+            "CTX_REPLACE_TRIGGER_BYTES": str(10**12), **extra}
 
 
 def _util(w: dict | None) -> float:
