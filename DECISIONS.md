@@ -182,3 +182,18 @@ Each entry: what we chose, the alternatives, and why. Numbers are filled in as t
   6 agents, so normal work never hits it); refusals are audited.
 - **Output cap:** telemetry results over 20,000 characters are cut with a notice to narrow the query (protects the
   model's context and cost per call); recorded in the audit as `output_cut`.
+
+## D15. Policy safety properties checked exhaustively in CI (2026-11-12)
+- **What:** Cedar itself evaluates every combination of the attributes the policies can distinguish (principal,
+  tool server/id/annotations, scopes, chain, delegation, approval, and each argument as absent / each constant /
+  another value): 221,184 requests, 29,736 allowed, in ~40 s. Properties on every allowed request: nothing
+  destructive without approval; only the executor, delegated through the commander, with cluster:write, in
+  otel-demo ever gets a non-read-only tool; protected platform services never touched; never scale below 1; a tool
+  annotated both read-only and destructive still needs approval; read-only tools need telemetry:read.
+- **Found by it:** rule 2 (executor cluster actions) also covers read-only tools on the cluster server (cluster:write
+  without telemetry:read suffices there). Kept on purpose and written into the property: writing the cluster
+  implies reading it.
+- **Mutation check:** deleting the destructive-needs-approval rule makes exactly the two approval properties fail.
+- **Not yet:** an SMT proof with Cedar's symbolic compiler (cedar-policy-symcc + cvc5, Lean-verified soundness);
+  needs a Rust toolchain (~1–2 GB). The exhaustive check covers the same finite abstraction; the proof would also
+  cover schema changes without re-deriving the equivalence classes.
