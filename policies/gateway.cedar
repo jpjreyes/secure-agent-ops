@@ -35,5 +35,5 @@ when {
 
 // 5. Never scale a service to zero (that is an outage, not a remediation).
 @id("no-scale-to-zero")
-forbid (principal, action == Action::"call", resource == Tool::"cluster/scale")
+forbid (principal, action == Action::"call", resource == Tool::"cluster/scale_deployment")
 when { context.args has replicas && context.args.replicas < 1 };

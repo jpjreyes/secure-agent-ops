@@ -13,7 +13,7 @@ EXEC = Principal("agent:executor", "user:oncall", ("agent:commander", "agent:exe
 EXEC_UNDELEGATED = Principal("agent:executor", None, (), frozenset({"telemetry:read", "cluster:write"}), "t", "i", 0)
 INV = Principal("agent:investigator", None, (), frozenset({"telemetry:read"}), "t", "i", 0)
 NO_SCOPE = Principal("agent:investigator", None, (), frozenset(), "t", "i", 0)
-ROLLBACK, SCALE, FLAG = (ToolInfo("cluster", n, False, True) for n in ("rollback", "scale", "set_flag"))
+ROLLBACK, SCALE, FLAG = (ToolInfo("cluster", n, False, True) for n in ("rollback_deployment", "scale_deployment", "set_flag"))
 OVERVIEW = ToolInfo("telemetry", "overview", True, False)
 OK = {"namespace": "otel-demo", "name": "checkout"}
 
@@ -42,7 +42,7 @@ def test_tool_list_is_filtered_per_agent():
     tools = [ROLLBACK, SCALE, FLAG, OVERVIEW]
     assert [t.name for t in POL.visible_tools(INV, tools)] == ["overview"]
     assert [t.name for t in POL.visible_tools(EXEC_UNDELEGATED, tools)] == ["overview"]
-    assert [t.name for t in POL.visible_tools(EXEC, tools)] == ["rollback", "scale", "set_flag", "overview"]
+    assert [t.name for t in POL.visible_tools(EXEC, tools)] == ["rollback_deployment", "scale_deployment", "set_flag", "overview"]
 
 
 def test_missing_annotations_are_treated_as_destructive():
@@ -53,3 +53,15 @@ def test_missing_annotations_are_treated_as_destructive():
 def test_policies_must_validate_against_the_schema():
     with pytest.raises(ValueError, match="validate"):
         Policy('permit (principal, action, resource) when { context.args.typo == "x" };')
+
+
+def test_every_tool_named_in_a_policy_exists():
+    """A policy naming a tool that doesn't exist silently never applies (found once: "cluster/scale")."""
+    import asyncio
+    import re
+
+    from sao.mcp import cluster_server, telemetry_server
+    real = {f"cluster/{t.name}" for t in asyncio.run(cluster_server.server.list_tools())}
+    real |= {f"telemetry/{t.name}" for t in asyncio.run(telemetry_server.server.list_tools())}
+    named = set(re.findall(r'Tool::"([^"]+)"', POL.text))
+    assert named and named <= real, named - real
