@@ -7,7 +7,10 @@ dependencies = [
     "claude-agent-sdk>=0.2.180",
     "duckdb>=2.0.0",
     "huggingface-hub>=0.26",
+    "langgraph>=1.2.21",
+    "langgraph-checkpoint-postgres>=3.2.0",
     "mcp>=2.3.0",
+    "psycopg[binary,pool]>=3.3.9",
     "pyyaml>=6",
 ]
 

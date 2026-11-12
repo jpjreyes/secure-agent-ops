@@ -40,7 +40,13 @@ class EvalStop(BaseException):
 
 
 class QuotaStop(EvalStop):
-    """Usage reached the stop threshold, or paid extra usage was used."""
+    """Usage reached the stop threshold, or paid extra usage was used. `retry_at` (epoch seconds, or None) is when
+    the window that tripped the stop resets; runners print it and exit 75 so a driver can wait and resume."""
+
+    def __init__(self, msg: str, retry_at: float | None = None, final: bool = False):
+        super().__init__(msg)
+        self.retry_at = retry_at
+        self.final = final  # paid extra usage: never resume automatically
 
 
 class NotClean(EvalStop):
@@ -71,9 +77,34 @@ def _util(w: dict | None) -> float:
     return max((x.get("utilization") or 0.0 for x in (w or {}).values()), default=0.0)
 
 
-def before_run() -> None:
-    if _util(last_windows) >= STOP_AT:
-        raise QuotaStop(f"usage at {_util(last_windows):.0%} (stop at {STOP_AT:.0%}): {last_windows}")
+def _epoch(v) -> float | None:
+    if v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return float(v) / (1000 if v > 1e12 else 1)
+    try:
+        from datetime import datetime
+        return datetime.fromisoformat(str(v).replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+def retry_at(threshold: float = STOP_AT) -> float | None:
+    """When the windows at or above the threshold reset (the latest of them)."""
+    times = [_epoch(w.get("resetsAt") or w.get("resets_at")) for w in (last_windows or {}).values()
+             if (w.get("utilization") or 0.0) >= threshold]
+    times = [t for t in times if t]
+    return max(times) if times else None
+
+
+def before_run(reserve: float = 0.0) -> None:
+    """Refuse to start new work at the stop threshold. `reserve` (a fraction of the window) is the measured cost
+    of the work about to start: an episode starts only if it can finish below the threshold, so stops land between
+    episodes instead of cutting one off."""
+    u = _util(last_windows)
+    if u + reserve >= STOP_AT:
+        raise QuotaStop(f"usage at {u:.0%} + reserve {reserve:.1%} (stop at {STOP_AT:.0%}): {last_windows}",
+                        retry_at=retry_at(STOP_AT - reserve))
 
 
 def check(msg) -> None:
@@ -97,6 +128,6 @@ def check(msg) -> None:
         raw = getattr(info, "raw", None) or {}
         last_windows = raw.get("unifiedWindows") or last_windows
         if raw.get("isUsingOverage"):
-            raise QuotaStop(f"the run used paid extra usage: {raw}")
+            raise QuotaStop(f"the run used paid extra usage: {raw}", final=True)
         if str(getattr(info, "status", "")) in ("rejected", "RateLimitStatus.REJECTED"):
-            raise QuotaStop(f"usage limit reached: {raw}")
+            raise QuotaStop(f"usage limit reached: {raw}", retry_at=retry_at(1.0) or retry_at(0.0))
