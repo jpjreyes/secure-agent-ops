@@ -41,16 +41,20 @@ components:
 
 opentelemetry-collector:
   resources: {requests: {memory: 200Mi}, limits: {memory: 400Mi}}
+  # the upstream probe (1 s timeout) killed the collector whenever the small VM was busy, losing telemetry
+  livenessProbe: {timeoutSeconds: 5, failureThreshold: 6, periodSeconds: 15}
+  readinessProbe: {timeoutSeconds: 5}
 jaeger:
   jaeger:
     resources: {requests: {memory: 300Mi}, limits: {memory: 600Mi}}
-# 3. Prometheus: 15 s scrape/evaluation (faults show up within a minute) and the two service alerts ITBench-AA's
+# 3. Prometheus: 30 s scrape, 15 s rule evaluation (faults show up within a minute; 15 s scrapes kept Prometheus and
+#    the kubelet at ~1.7 CPUs on the 4-CPU VM) and the two service alerts ITBench-AA's
 #    environment fires (same names, labels and description format), so live incidents look like the benchmark's.
 prometheus:
   server:
     resources: {requests: {memory: 256Mi}, limits: {memory: 512Mi}}
     global:
-      scrape_interval: 15s
+      scrape_interval: 30s
       evaluation_interval: 15s
       scrape_timeout: 10s
   serverFiles:

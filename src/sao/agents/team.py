@@ -63,6 +63,7 @@ class TeamState(TypedDict, total=False):
     findings: Annotated[list[dict], operator.add]
     draft: dict
     final: dict
+    verdicts: list[dict]
     calls: Annotated[list[dict], operator.add]
 
 
@@ -124,20 +125,66 @@ load generator) over services that merely fail because of it. Do not call any to
 TASK RULES:
 """ + TASK
 
-VERIFIER = """You are the verifier on an SRE incident-response team. The commander drafted a diagnosis from the
-investigators' findings. Your job is to catch the two most common errors before it is submitted:
-1. A SYMPTOM listed as a root cause (a service that fails because something upstream failed).
-2. A correct cause listed together with its own symptoms (extra entities are false positives).
-Also check the opposite: the true origin may be an object nobody listed (a ConfigMap or feature flag change, a chaos
-experiment object, a load generator, a scaled-down or misconfigured Deployment, a Service or NetworkPolicy change).
+VERIFIER = """You are the verifier on an SRE incident-response team. The commander drafted a diagnosis; investigators
+raised other candidates. Before anything is submitted you must rule on EVERY candidate below, using the tools to
+check evidence, and you may add candidates nobody listed (the true origin is often an object: a ConfigMap or feature
+flag change, a chaos experiment object, the load generator, a scaled-down or misconfigured Deployment, a Service or
+NetworkPolicy change).
 
-For each entity in the draft: find what changed or failed AT that entity and when; look for anything upstream that
-changed earlier and explains it (object changes and diffs, chaos-mesh objects, flagd-config, events, dependencies,
-error traces). Keep it only if it passes the irreducibility test. Replace symptoms with their upstream cause when the
-evidence shows one. Return the final diagnosis (it may be identical to the draft if it holds up).
+For each candidate decide:
+- cause: the fault ORIGINATED here (something changed or failed at this entity first) and it is not explained by
+  another cause;
+- symptom: it fails because something it depends on, or something that changed, failed first. Name that entity in
+  `explained_by`;
+- unrelated: no qualifying evidence tied to the incident window.
+A rollout, restart or scaling that only applied another change, or that followed a failure, is not an independent
+cause: mark it explained_by that change. Mark two entities as independent causes only if neither explains the
+other and each alone explains some of the alerts. Prefer the most specific object that introduced the fault.
+Your verdicts decide the submission: only `cause` entities not explained by another cause are submitted.
 
-TASK RULES:
+TASK RULES (for entity format and inclusion):
 """ + TASK
+
+VERDICT_SCHEMA = {
+    "type": "object",
+    "properties": {"verdicts": {"type": "array", "items": {
+        "type": "object",
+        "properties": {
+            "entity": {"type": "string", "description": "namespace/Kind/name"},
+            "verdict": {"type": "string", "enum": ["cause", "symptom", "unrelated"]},
+            "explained_by": {"type": ["string", "null"], "description": "the entity that explains it, if any"},
+            "reasoning": {"type": "string"},
+            "evidence": {"type": "string"},
+        },
+        "required": ["entity", "verdict", "reasoning", "evidence"]}}},
+    "required": ["verdicts"],
+}
+
+
+def _norm(e: str) -> str:
+    """Investigators sometimes annotate entities ("ns/Kind/name (pod x)"); keep the ns/Kind/name part."""
+    return e.split(" ")[0].strip()
+
+
+def candidates(state: dict) -> list[str]:
+    seen: list[str] = []
+    for f in (state.get("draft") or {}).get("contributing_factors", []):
+        if _norm(f["name"]) not in seen:
+            seen.append(_norm(f["name"]))
+    for f in state.get("findings", []):
+        for c in f["candidates"]:
+            if c.get("role") == "possible_cause" and _norm(c["entity"]) not in seen:
+                seen.append(_norm(c["entity"]))
+    return seen
+
+
+def final_from_verdicts(verdicts: list[dict]) -> dict:
+    """Submit causes that no other submitted cause explains (decided in code, not by the model's last word)."""
+    causes = {_norm(v["entity"]): v for v in verdicts if v.get("verdict") == "cause"}
+    keep = [v for e, v in causes.items() if not (v.get("explained_by") and _norm(v["explained_by"]) in causes
+                                                   and _norm(v["explained_by"]) != e)]
+    return {"contributing_factors": [{"name": _norm(v["entity"]), "reasoning": v["reasoning"],
+                                      "evidence": v["evidence"]} for v in keep]}
 
 
 def _record(r: dict, node: str) -> dict:
@@ -215,12 +262,17 @@ async def commander_synthesize(state: TeamState) -> dict:
 
 
 async def verify(state: TeamState) -> dict:
+    cands = candidates(state)
     r = await _agent("verify", role="verifier", system=VERIFIER, snapshot=Path(state["snapshot"]),
                      prompt="Investigator reports:\n" + _findings_text(state) + "\n\nDraft diagnosis:\n"
-                            + json.dumps(state["draft"], indent=1) + "\n\nVerify and give the final JSON diagnosis.",
-                     model=MODELS["verifier"], schema=DIAGNOSIS_SCHEMA, tools=None, max_turns=TURNS["verifier"])
-    final = r["output"] if r["output"].get("contributing_factors") else state["draft"]
-    return {"final": final, "calls": [_record(r, "verify")]}
+                            + json.dumps(state["draft"], indent=1) + "\n\nCandidates to rule on:\n"
+                            + "\n".join(f"- {c}" for c in cands) + "\n\nCheck the evidence and give your verdicts.",
+                     model=MODELS["verifier"], schema=VERDICT_SCHEMA, tools=None, max_turns=TURNS["verifier"])
+    verdicts = (r["output"] or {}).get("verdicts") or []
+    final = final_from_verdicts(verdicts) if verdicts else state["draft"]
+    if not final["contributing_factors"]:  # never submit nothing because of a verdict slip: keep the draft
+        final = state["draft"]
+    return {"final": final, "verdicts": verdicts, "calls": [_record(r, "verify")]}
 
 
 def after_synthesis(state: TeamState) -> str:
@@ -259,7 +311,7 @@ async def diagnose(snapshot: Path, setup: str, thread_id: str, checkpointer) -> 
     calls = values.get("calls", [])
     answer = values.get("final") if setup == "C" else values.get("draft")
     return {"factors": (answer or {}).get("contributing_factors", []), "is_error": answer is None,
-            "draft": values.get("draft"), "plan": values.get("plan"), "findings": values.get("findings"),
+            "draft": values.get("draft"), "verdicts": values.get("verdicts"), "plan": values.get("plan"), "findings": values.get("findings"),
             "calls": calls, "resumed": resumed, "turns": sum(c["turns"] or 0 for c in calls),
             "tool_calls": [t for c in calls for t in c["tool_calls"]],
             "cost_usd_api_equivalent": round(sum(c["cost_usd_api_equivalent"] for c in calls), 4),

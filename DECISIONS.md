@@ -51,3 +51,50 @@ Each entry: what we chose, the alternatives, and why. Numbers are filled in as t
 - **Why:** each tool call is a short request, which fits a stateless function at ~$0 idle; Fargate costs ~$25–40 a
   month to stay warm. Overhead is reported in three rows (local, Lambda warm, Lambda cold start); provisioned
   concurrency only during demos. AgentCore Gateway would replace the part this project exists to build.
+
+## D6. Live telemetry: record the cluster into the benchmark's snapshot layout
+- **Chose:** a recorder polls Kubernetes (objects, events, pod status), Prometheus (service error rate and p95 from
+  span metrics, container memory/CPU, firing alerts), Jaeger (spans; errors fetched separately) and OpenSearch
+  (logs) every 15 s, and rewrites the incident folder in the same layout the ITBench-AA ingest produces. The telemetry
+  tools read it unchanged; during an incident each tool call sees data at most one poll old.
+- **Alternatives:** a second implementation of every tool against the live APIs.
+- **Why:** one implementation means identical tool names, arguments and outputs on the benchmark and on live faults
+  (no "it works on the benchmark tools only"); Kubernetes keeps no object history, so a recorder is needed anyway for
+  `changes`/`object_diff`; every live incident becomes a frozen, replayable snapshot (same input for every setup and
+  repeat, audit trail of what the agents saw). The recording ends while the fault is still active, as in ITBench-AA.
+- **Alert parity:** Prometheus gets the two service alerts the benchmark's environment fires (RequestErrorRate,
+  RequestLatency; same names, labels and description format) and a 15 s scrape.
+- **Environment fixes found while recording (2026-11-12):** the load generator's browser users (headless Chrome) and
+  Grafana used ~2 of the VM's 4 CPUs; probes timed out and the collector restarted. Both are off (HTTP users still
+  drive the same service traffic). The chart's Prometheus has no config reloader, so `cluster.sh up` restarts it.
+
+## D7. Faults on the live cluster: flags plus our own configuration faults, revert that survives crashes
+- **Chose:** 19 faults: 12 of the demo's feature flags (root cause = the flagd-config ConfigMap, as in the
+  benchmark) and 7 configuration faults a person could roll out (wrong dependency address in a Deployment's env x3,
+  Service selector typo, scale to zero, deny-all NetworkPolicy, memory limit too low). Each has ground truth in
+  ITBench-AA's format, so the same scorer runs on benchmark and live incidents.
+- **Safety:** the objects a fault touches are saved (atomically) before it changes anything; revert restores them
+  from that file. Every episode reverts leftovers first and reverts in `finally`, and nothing (not even a recorder
+  that won't stop) stands between a fault and its revert: an early version let a stuck recorder skip the revert,
+  caught on the second episode and fixed.
+- **Settle time:** flag faults show alerts in ~80 s; configuration faults act only after a rollout and on real
+  traffic (checkouts are a few per minute), so they wait up to 300 s. Episodes record which expected alerts fired;
+  an episode with no symptom is reported, not scored as a miss.
+
+## D8. Stop-safe runs: a usage stop costs at most the agent calls in flight
+- **Constraint:** stop at 80% of the 5-hour or weekly window; one shared quota across projects. Lessons
+  from P4 (exit 75 + reset time + a driver that waits and resumes) and P5 (append-only results, pinned config,
+  interrupted episodes never counted).
+- **Chose:**
+  1. Before each episode: usage + the measured cost of one episode (`--reserve`) must fit below 80%, so stops land
+     between episodes.
+  2. Team episodes are checkpointed after every step in Postgres; a rerun resumes the same thread from the last
+     finished step and the result records `resumed: true`.
+  3. A stop inside one parallel investigator waits for the investigators already running to finish before failing
+     the step (no new agent starts after a stop). Found by the crash-resume test: LangGraph cancels the other tasks of
+     a step when one fails, so without the wait their work was thrown away and redone.
+  4. Exit 75 with `EVAL_RETRY_AT`; `scripts/run_eval.sh` waits for the reset, restarts the checkpoint database if
+     needed, and resumes; paid extra usage or an unclean environment exits 2 for good.
+  5. `run_config.json` pins models, turn caps and a hash of the prompts per results folder; a resume with a different
+     configuration is refused (new `--tag` instead).
+- **Live episodes are not resumed mid-way** (the cluster keeps changing); they are discarded and re-recorded.

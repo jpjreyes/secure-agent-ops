@@ -10,7 +10,7 @@ Sources (all read through the Kubernetes API server: no port-forwards):
 - Jaeger: spans of recent traces per service (errors fetched separately so they are never sampled away).
 - OpenSearch: log records.
 
-The recorder polls every POLL_S seconds and rewrites the Parquet files atomically after each poll, so a tool call
+The recorder polls every POLL_S seconds (20) and rewrites the Parquet files atomically after each poll, so a call
 sees data at most one poll old. After the episode the folder is a frozen snapshot: replayable and auditable.
 
   uv run python -m sao.telemetry.live runs/live/<episode>/snapshot      (records until killed)
@@ -33,7 +33,8 @@ import duckdb
 
 from sao import kube
 
-POLL_S = 15
+POLL_S = 20
+TRACE_BUDGET_S = 8
 NS = kube.NAMESPACE
 OBJECT_KINDS = {  # list path → Kind (raw API lists don't carry the kind on each item)
     f"/apis/apps/v1/namespaces/{NS}/deployments": "Deployment",
@@ -104,8 +105,16 @@ class Recorder:
         self._log_seen: set[str] = set()
         self._last_traces = self.t0 - 60
         self._last_logs = self.t0 - 60
+        self._last_metrics: float | None = None
+        self._metric_rows: dict[tuple, dict] = {}
         self.errors: list[str] = []
-        self.api = kube.ApiProxy()
+        self._api: kube.ApiProxy | None = None
+
+    @property
+    def api(self) -> kube.ApiProxy:
+        if self._api is None:
+            self._api = kube.ApiProxy()
+        return self._api
 
     # ---------- sources ----------
     def poll_objects(self, now: float) -> None:
@@ -155,12 +164,14 @@ class Recorder:
         (self.out / "alerts" / f"alerts_at_{_iso(now).replace(':', '-')}.json").write_text(json.dumps(d))
 
     def collect_metrics(self, now: float) -> None:
-        """Re-read the whole window each time (cheap at 15 s steps); replaces earlier rows."""
-        rows = []
+        """Incremental: query only since the last poll (with a minute of overlap for late samples) and keep one row
+        per (metric, series, timestamp). Re-reading the whole window every poll grew with the episode."""
+        start = self._last_metrics - 60 if self._last_metrics else self.t0 - 120
         for (name, mtype, by), q in METRIC_QUERIES.items():
-            d = self._prom("api/v1/query_range", {"query": q, "start": self.t0 - 120, "end": now, "step": "15s"})
+            d = self._prom("api/v1/query_range", {"query": q, "start": start, "end": now, "step": "15s"})
             for series in d.get("data", {}).get("result", []):
                 lb = series["metric"]
+                ent = lb.get("pod", "") if by == "pod" else lb.get("service_name", "")
                 for ts, v in series["values"]:
                     try:
                         val = float(v)
@@ -168,45 +179,62 @@ class Recorder:
                         continue
                     if val != val:  # NaN (no requests in that step)
                         continue
-                    rows.append({"metric_name": name, "timestamp": _iso(float(ts)), "value": val,
-                                 "pod_name": lb.get("pod", "") if by == "pod" else "", "namespace": NS,
-                                 "service_name": lb.get("service_name", "") if by == "service" else "",
-                                 "metric_type": mtype})
-        self.rows["metrics"] = rows + self.pod_metrics
+                    self._metric_rows[(name, mtype, ent, float(ts))] = {
+                        "metric_name": name, "timestamp": _iso(float(ts)), "value": val,
+                        "pod_name": ent if by == "pod" else "", "namespace": NS,
+                        "service_name": ent if by == "service" else "", "metric_type": mtype}
+        self._last_metrics = now
+        self.rows["metrics"] = list(self._metric_rows.values()) + self.pod_metrics
+
+    def _span_rows(self, data: list[dict]) -> list[dict]:
+        out = []
+        for tr in data:
+            procs = tr.get("processes", {})
+            for s in tr.get("spans", []):
+                tags = {t["key"]: t.get("value") for t in s.get("tags", [])}
+                parent = next((r["spanID"] for r in s.get("references", []) if r.get("refType") == "CHILD_OF"), "")
+                status = tags.get("otel.status_code") or ("ERROR" if tags.get("error") in (True, "true") else "UNSET")
+                out.append({
+                    "timestamp": _iso(s["startTime"] / 1e6), "trace_id": s["traceID"], "span_id": s["spanID"],
+                    "parent_span_id": parent, "service_name": procs.get(s["processID"], {}).get("serviceName"),
+                    "span_name": s["operationName"],
+                    # same spelling as ITBench-AA's exporter rows: Server/Client/…, Error/Ok/Unset
+                    "span_kind": str(tags.get("span.kind", "internal")).capitalize(),
+                    "duration": str(int(s["duration"]) * 1000), "status_code": str(status).capitalize(),
+                    "status_message": str(tags.get("otel.status_description") or tags.get("error.message") or "")})
+        return out
 
     def poll_traces(self, now: float) -> None:
+        """Error traces first (never sampled away), then a sample of all traces; queries run in parallel and the
+        whole step has a time budget so a slow Jaeger can't stall the poll."""
+        from concurrent.futures import ThreadPoolExecutor, wait
         start, end = int(self._last_traces * 1e6), int(now * 1e6)
-        services = json.loads(self.api.service(*JAEGER, "jaeger/ui/api/services")).get("data") or []
-        for svc in services:
-            if svc in SKIP_TRACE_SERVICES:
+        services = [s for s in json.loads(self.api.service(*JAEGER, "jaeger/ui/api/services")).get("data") or []
+                    if s not in SKIP_TRACE_SERVICES]
+        queries = [(svc, {"limit": 100, "tags": json.dumps({"error": "true"})}) for svc in services]
+        queries += [(svc, {"limit": 30}) for svc in services]
+
+        def fetch(svc_extra):
+            svc, extra = svc_extra
+            q = urlencode({"service": svc, "start": start, "end": end, **extra})
+            return json.loads(self.api.service(*JAEGER, f"jaeger/ui/api/traces?{q}", timeout=TRACE_BUDGET_S))
+
+        pool = ThreadPoolExecutor(max_workers=6)
+        futs = [pool.submit(fetch, q) for q in queries]
+        done, pending = wait(futs, timeout=TRACE_BUDGET_S)
+        pool.shutdown(wait=False, cancel_futures=True)
+        if pending:
+            self.errors.append(f"jaeger: {len(pending)}/{len(futs)} queries over the {TRACE_BUDGET_S}s budget")
+        for f in done:
+            try:
+                rows = self._span_rows(f.result().get("data") or [])
+            except (OSError, ValueError) as e:
+                self.errors.append(f"jaeger: {e}")
                 continue
-            for extra in ({"limit": 40}, {"limit": 100, "tags": json.dumps({"error": "true"})}):
-                q = urlencode({"service": svc, "start": start, "end": end, **extra})
-                try:
-                    data = json.loads(self.api.service(*JAEGER, f"jaeger/ui/api/traces?{q}")).get("data") or []
-                except OSError as e:
-                    self.errors.append(f"jaeger {svc}: {e}")
-                    continue
-                for tr in data:
-                    procs = tr.get("processes", {})
-                    for s in tr.get("spans", []):
-                        if s["spanID"] in self._span_seen:
-                            continue
-                        self._span_seen.add(s["spanID"])
-                        tags = {t["key"]: t.get("value") for t in s.get("tags", [])}
-                        parent = next((r["spanID"] for r in s.get("references", []) if r.get("refType") == "CHILD_OF"),
-                                      "")
-                        status = tags.get("otel.status_code") or ("ERROR" if tags.get("error") in (True, "true")
-                                                                   else "UNSET")
-                        self.rows["traces"].append({
-                            "timestamp": _iso(s["startTime"] / 1e6), "trace_id": s["traceID"], "span_id": s["spanID"],
-                            "parent_span_id": parent, "service_name": procs.get(s["processID"], {}).get("serviceName"),
-                            "span_name": s["operationName"],
-                            # same spelling as ITBench-AA's exporter rows: Server/Client/…, Error/Ok/Unset
-                            "span_kind": str(tags.get("span.kind", "internal")).capitalize(),
-                            "duration": str(int(s["duration"]) * 1000), "status_code": str(status).capitalize(),
-                            "status_message": str(tags.get("otel.status_description") or tags.get("error.message")
-                                                  or "")})
+            for r in rows:
+                if r["span_id"] not in self._span_seen:
+                    self._span_seen.add(r["span_id"])
+                    self.rows["traces"].append(r)
         self._last_traces = now - 30  # overlap: traces finish late; duplicates are skipped by span id
 
     def poll_logs(self, now: float) -> None:
@@ -294,7 +322,8 @@ class Recorder:
             while not stop and time.time() - t < self.poll_s:
                 time.sleep(0.5)
         self.poll()
-        self.api.close()
+        if self._api:
+            self._api.close()
 
 
 if __name__ == "__main__":

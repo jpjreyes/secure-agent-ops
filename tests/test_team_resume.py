@@ -85,3 +85,26 @@ def test_uninterrupted_run_matches(monkeypatch):
     calls, stopped, result = asyncio.run(_run(monkeypatch, set()))
     assert not stopped and calls["investigator:traces"] == 1
     assert [f["name"] for f in result["factors"]] == ["otel-demo/Deployment/checkout"]
+
+
+def test_final_keeps_only_unexplained_causes():
+    v = [
+        {"entity": "otel-demo/ConfigMap/flagd-config", "verdict": "cause", "explained_by": None, "reasoning": "r",
+         "evidence": "e"},
+        {"entity": "otel-demo/Deployment/kafka", "verdict": "cause", "explained_by": "otel-demo/ConfigMap/flagd-config",
+         "reasoning": "r", "evidence": "e"},
+        {"entity": "otel-demo/Deployment/frontend (pod x)", "verdict": "symptom", "explained_by": None,
+         "reasoning": "r", "evidence": "e"},
+        {"entity": "otel-demo/Deployment/cart", "verdict": "cause", "explained_by": "otel-demo/Deployment/cart",
+         "reasoning": "r", "evidence": "e"},
+    ]
+    out = [f["name"] for f in team.final_from_verdicts(v)["contributing_factors"]]
+    assert out == ["otel-demo/ConfigMap/flagd-config", "otel-demo/Deployment/cart"]
+
+
+def test_candidates_union_draft_and_possible_causes():
+    st = {"draft": {"contributing_factors": [{"name": "otel-demo/Deployment/a"}]},
+          "findings": [{"candidates": [{"entity": "otel-demo/Pod/lg-1 (load generator)", "role": "possible_cause"},
+                                       {"entity": "otel-demo/Deployment/b", "role": "symptom"},
+                                       {"entity": "otel-demo/Deployment/a", "role": "possible_cause"}]}]}
+    assert team.candidates(st) == ["otel-demo/Deployment/a", "otel-demo/Pod/lg-1"]

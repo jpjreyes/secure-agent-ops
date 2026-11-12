@@ -187,3 +187,9 @@ FAULTS: dict[str, Fault] = {f.id: f for f in [
                      touches=[("deployment", "recommendation")], symptoms=["recommendation", "frontend"],
                      root=("Deployment", "recommendation"), deployment="recommendation", limit="48Mi", settle_s=210),
 ]}
+
+# Configuration faults act only after a rollout and on real traffic (checkouts are a few per minute), so their
+# alerts need longer than a flag flip; the episode still stops waiting as soon as alerts fire.
+for _f in FAULTS.values():
+    if _f.family == "config" and _f.settle_s == 150:
+        _f.settle_s = 300

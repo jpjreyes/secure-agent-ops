@@ -92,10 +92,29 @@ def record(fault_id: str, baseline_s: int = 120, after_s: int = 30, hold: bool =
     return ep
 
 
+def record_all(baseline_s: int, rep: int = 1) -> None:
+    """Record every fault once (episode runs/live/<fault>-r<rep>); finished episodes are skipped, so rerunning
+    after a crash continues. A half-written episode (no episode.json) is deleted and recorded again."""
+    import shutil
+    todo = [f for f in FAULTS if not (LIVE / f"{f}-r{rep}" / "episode.json").exists()]
+    t0 = time.time()
+    for i, fid in enumerate(todo, 1):
+        ep = LIVE / f"{fid}-r{rep}"
+        if ep.exists():
+            shutil.rmtree(ep)
+        record(fid, baseline_s, name=ep.name)
+        el = time.time() - t0
+        print(f"=== {i}/{len(todo)} done, ETA {el / i * (len(todo) - i) / 60:.0f} min", flush=True)
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("fault", choices=sorted(FAULTS))
+    ap.add_argument("fault", nargs="?", choices=sorted(FAULTS))
+    ap.add_argument("--all", action="store_true", help="record every fault once (resumable)")
     ap.add_argument("--baseline", type=int, default=120)
     ap.add_argument("--hold", action="store_true")
     a = ap.parse_args()
-    record(a.fault, a.baseline, hold=a.hold)
+    if a.all:
+        record_all(a.baseline)
+    else:
+        record(a.fault, a.baseline, hold=a.hold)

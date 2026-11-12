@@ -40,7 +40,8 @@ RUNS = ROOT / "runs" / "itbench"
 
 def team_config() -> dict:
     from sao.agents import team
-    prompts = "".join([team.COMMANDER_PLAN, team.INVESTIGATOR, team.SYNTHESIZE, team.VERIFIER])
+    prompts = "".join([team.COMMANDER_PLAN, team.INVESTIGATOR, team.SYNTHESIZE, team.VERIFIER,
+                       json.dumps(team.VERDICT_SCHEMA)])
     return {"models": team.MODELS, "turns": team.TURNS, "signal_tools": team.SIGNAL_TOOLS,
             "prompts_sha": hashlib.sha256(prompts.encode()).hexdigest()[:12]}
 
