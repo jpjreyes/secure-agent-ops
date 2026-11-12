@@ -376,11 +376,16 @@ async def diagnose(snapshot: Path, setup: str, thread_id: str, checkpointer) -> 
             values = await graph.ainvoke(inp, config, durability="sync")
         except NodeStop as e:
             raise e.stop from None
+    return team_result(values, setup) | {"resumed": resumed}
+
+
+def team_result(values: dict, setup: str = "C") -> dict:
+    """The episode's result from the graph state (same shape as setup A, plus per-agent calls)."""
     calls = values.get("calls", [])
     answer = values.get("final") if setup == "C" else values.get("draft")
     return {"factors": (answer or {}).get("contributing_factors", []), "is_error": answer is None,
-            "draft": values.get("draft"), "verdicts": values.get("verdicts"), "plan": values.get("plan"), "findings": values.get("findings"),
-            "calls": calls, "resumed": resumed, "turns": sum(c["turns"] or 0 for c in calls),
+            "draft": values.get("draft"), "verdicts": values.get("verdicts"), "plan": values.get("plan"),
+            "findings": values.get("findings"), "calls": calls, "turns": sum(c["turns"] or 0 for c in calls),
             "tool_calls": [t for c in calls for t in c["tool_calls"]],
             "cost_usd_api_equivalent": round(sum(c["cost_usd_api_equivalent"] for c in calls), 4),
             "input_tokens": sum(c["input_tokens"] for c in calls),

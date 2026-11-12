@@ -47,7 +47,8 @@ def live_episodes() -> list[str]:
     """Recorded live episodes whose expected alerts fired (an episode without symptoms is reported, not scored)."""
     out = []
     for ep in sorted(LIVE.glob("*/episode.json")):
-        if json.loads(ep.read_text()).get("symptom_observed"):
+        d = json.loads(ep.read_text())
+        if d.get("complete") and d.get("symptom_observed") and d.get("baseline_clean", True):
             out.append(ep.parent.name)
     return out
 
@@ -70,6 +71,36 @@ def pin_config(out_dir: Path, cfg: dict) -> None:
     else:
         out_dir.mkdir(parents=True, exist_ok=True)
         p.write_text(json.dumps(cfg, indent=1))
+
+
+async def run_remediation(sid: str, k: int, tag: str, cp, gw) -> dict:
+    """Live split, setup C: diagnosis, then the executor's plan at the approval pause; the plan is scored against
+    the fault's known remedy and its calls are checked through the gateway in dry run (evals/PLAN.md)."""
+    import uuid
+
+    from sao.agents import remediate, team
+    from sao.faults.catalog import REMEDIES
+    from sao.gateway.approvals import sign_approval
+    from sao.gateway.local import ONCALL
+    from sao.incident import run_incident
+    captured = {}
+
+    def plan_only(payload, issuer):  # capture the plan; the eval doesn't resume into execution
+        captured.update(payload)
+        return {"decision": "reject", "calls": payload["calls"], "approver": "eval", "how": "scored offline"}
+
+    thread = f"C-{tag}-{sid}-rep{k}-rem-{uuid.uuid4().hex[:6]}"
+    r = await run_incident(snap_dir(sid), thread, plan_only, [], cp, gw)
+    values = r
+    plan = values.get("fix_plan") or {"actions": []}
+    fault = json.loads((LIVE / sid / "episode.json").read_text())["fault"]
+    out = team.team_result(values)
+    out["fix_plan"] = plan
+    out["plan_score"] = remediate.score_plan(plan, REMEDIES[fault])
+    if captured.get("calls"):
+        appr = sign_approval(gw.issuer.signer, gw.issuer.iss, ONCALL, captured["calls"], thread)
+        out["dry_run"] = await remediate.validate_calls(captured["calls"], gw, appr, ONCALL)
+    return out
 
 
 async def run_one(setup: str, sid: str, k: int, model: str, tag: str, cp) -> dict:
@@ -101,7 +132,12 @@ async def run_all(a, todo: list[tuple[str, int]], out_dir: Path) -> int:
             try:
                 guard.before_run(reserve=a.reserve)
                 start = time.time()
-                if a.via_gateway:  # every tool call of every agent through the gateway; audit log per episode
+                if a.remediate:
+                    from sao.gateway.local import running_gateway
+                    with running_gateway(snap_dir(sid), out_dir / sid / f"rep{k}-gateway", cluster=True,
+                                         dry_run=True) as gw:
+                        r = await run_remediation(sid, k, a.tag, cp, gw)
+                elif a.via_gateway:  # every tool call of every agent through the gateway; audit log per episode
                     from sao.agents import sdk
                     from sao.gateway import audit as audit_mod
                     from sao.gateway.local import running_gateway
@@ -164,6 +200,8 @@ def main() -> None:
     ap.add_argument("--repeats", type=int, default=1)
     ap.add_argument("--model", default="sonnet", help="setup A only (the team's models are in sao.agents.team)")
     ap.add_argument("--tag", default="v1", help="B/C: names the results folder; change it when the team changes")
+    ap.add_argument("--remediate", action="store_true",
+                    help="live split, setup C: also produce and score the executor's plan (dry run, scored offline)")
     ap.add_argument("--via-gateway", action="store_true",
                     help="B/C: route every agent tool call through the MCP gateway (identity, Cedar, audit)")
     ap.add_argument("--reserve", type=float, default=0.0,
@@ -179,7 +217,8 @@ def main() -> None:
         out_dir = RUNS / f"{'live-' if a.split == 'live' else ''}A-{a.model}{'' if a.tag == 'v1' else '-' + a.tag}"
     else:
         out_dir = RUNS / f"{'live-' if a.split == 'live' else ''}{a.setup}-{a.tag}"
-        pin_config(out_dir, {"setup": a.setup, "via_gateway": a.via_gateway, **team_config()})
+        pin_config(out_dir, {"setup": a.setup, "via_gateway": a.via_gateway or a.remediate,
+                             "remediate": a.remediate, **team_config()})
     jobs = [(sid, k) for sid in ids for k in range(1, a.repeats + 1)]
     todo = [(s, k) for s, k in jobs if not (out_dir / s / f"rep{k}.json").exists()]
     print(f"{len(todo)} runs to do ({len(jobs) - len(todo)} already done) → {out_dir.relative_to(ROOT)}", flush=True)

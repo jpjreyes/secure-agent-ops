@@ -162,3 +162,12 @@ Each entry: what we chose, the alternatives, and why. Numbers are filled in as t
   from execution and the approval modes of shipping AI-SRE products (PagerDuty, Datadog). Plans can be scored
   offline, which keeps the remediation eval cheap.
 - **Cost accepted:** a failed fix needs a new plan and a new approval.
+
+## D13. Live episodes must start clean (2026-11-12)
+- **Found:** the first remediation smoke run flagged product-catalog lock contention in an episode about checkout.
+  Logs showed productCatalogLockContention kept running inside product-catalog after its flag was set back to off:
+  9 episodes recorded after it carried a second, unlabeled problem (an agent naming it was scored as a false
+  positive for a real issue).
+- **Fix:** reverting a flag fault also restarts the service the flag acts on; an episode records whether an error
+  alert was already firing during its baseline (`baseline_clean`); only complete, symptomatic, clean episodes are
+  scored. The 9 contaminated episodes are recorded again; results on them were discarded.

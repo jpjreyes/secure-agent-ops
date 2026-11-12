@@ -64,8 +64,9 @@ def assess(snapshot: Path, injected_at: float, expected: list[str]) -> dict:
     after = set().union(*[a for t, a in series if t >= injected_at]) if series else set()
     new = {a for a in after - before if a[0] in ("RequestErrorRate", "RequestLatency")}
     on_expected = sorted(a for a in new if a[1] in expected)
+    dirty = sorted(a for a in before if a[0] == "RequestErrorRate")  # an app already failing before injection
     return {"new_alerts": sorted(new), "expected_alerts": on_expected, "symptom_observed": bool(on_expected),
-            "baseline_alerts": sorted(before)}
+            "baseline_alerts": sorted(before), "baseline_errors": dirty, "baseline_clean": not dirty}
 
 
 def record(fault_id: str, baseline_s: int = 120, after_s: int = 30, hold: bool = False,

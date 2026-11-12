@@ -32,6 +32,7 @@ class Fault:
     symptoms: list[str] = field(default_factory=list)            # services expected to alert
     root: tuple[str, str] = ("", "")                             # (kind, name) of the root cause
     restart: list[str] = field(default_factory=list)             # deployments restarted after inject and revert
+    restart_after_revert: list[str] = field(default_factory=list)  # app services restarted after revert only
     settle_s: int = 150                                          # time for symptoms to show
 
     def inject(self) -> None:
@@ -218,3 +219,10 @@ REMEDIES |= {
     "cfg-catalog-service-selector": [],  # no tool edits a Service: escalate to a person
 }
 assert set(REMEDIES) == set(FAULTS)
+
+# A reverted flag can leave state behind inside the service it acted on (found 2026-11-12: product-catalog kept its
+# lock-contention loop after productCatalogLockContention was set back to off, contaminating the next 9 episodes).
+# Revert therefore also restarts that service, so every episode starts from a clean application.
+for _f in FAULTS.values():
+    if isinstance(_f, FlagFault) and _f.symptoms:
+        _f.restart_after_revert = [_f.symptoms[0]]
