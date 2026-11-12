@@ -1,0 +1,19 @@
+# Who may get tokens, with which scopes, and who may act for whom (D10). Keys are not here: each client's key pair
+# lives with the client (local: runs/identity/keys/<client>.pem; AWS: Secrets Manager / KMS), the issuer only needs
+# the public half. Scopes are coarse; the gateway's Cedar policies decide per tool and per argument.
+audience: sao-gateway
+clients:
+  agent:commander:
+    scopes: [telemetry:read]
+    may_act_for_users: true            # starts the chain when an incident is opened for an on-call user
+    may_delegate_to: [agent:executor]  # the only hand-off that leads to write actions
+  agent:investigator:
+    scopes: [telemetry:read]
+  agent:verifier:
+    scopes: [telemetry:read]
+  agent:executor:
+    scopes: [telemetry:read, cluster:write]
+  user:oncall-jp:                      # local stand-in for a person; in a deployment the subject token is the
+    kind: user                         # customer IdP's id_token (external_issuers below)
+    scopes: [telemetry:read, cluster:write]
+external_issuers: {}                   # e.g. https://<tenant>.okta.com: {jwks_uri: ..., audience: ...}
