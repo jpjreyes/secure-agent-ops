@@ -1,7 +1,7 @@
 """Run a setup on ITBench-AA scenarios, score every run, save each run atomically.
 
-  uv run python evals/run_itbench.py --setup A --split dev --repeats 1 --model sonnet
-  uv run python evals/run_itbench.py --setup A --ids Scenario-24 --repeats 1
+  uv run python -m evals.run_itbench --setup A --split dev --repeats 1 --model sonnet
+  uv run python -m evals.run_itbench --setup A --ids Scenario-24 --repeats 1
 
 Results: runs/itbench/<setup>-<model>/<scenario>/rep<k>.json (a finished run is never redone; a run cut off by the
 usage stop leaves no file and is redone next time). Prints progress with ETA and the usage windows after each run.

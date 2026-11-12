@@ -29,6 +29,7 @@ KNOWN_HOOKS = {
     "SessionStart": '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"This session may have '
                     'run before. Call mcp__plugin_context-mode_context-mode__ctx_resume for a summary of what happened."}}',
     "UserPromptSubmit": "",
+    "PostToolUse": "",  # runs after each tool call; empty output = the tool result reaches the model unchanged
 }
 
 last_windows: dict | None = None
@@ -59,7 +60,11 @@ def sdk_env() -> dict[str, str]:
     tok = read_token()
     if tok.startswith("sk-ant-api"):
         raise NotClean(f"{TOKEN} holds an API key, not a CLI login token")
-    return {"CLAUDE_CONFIG_DIR": str(CONFIG), "CLAUDE_CODE_OAUTH_TOKEN": tok}
+    # The org-managed context-mode plugin replaces any tool result over 4 KB with a pointer to its own search tool
+    # (which our agents don't have). Its own setting raises that limit, so tool results reach the model unchanged;
+    # the guard still checks that every PostToolUse hook returns empty output.
+    return {"CLAUDE_CONFIG_DIR": str(CONFIG), "CLAUDE_CODE_OAUTH_TOKEN": tok,
+            "CTX_REPLACE_TRIGGER_BYTES": str(10**12)}
 
 
 def _util(w: dict | None) -> float:
