@@ -63,6 +63,20 @@ nothing here is changed after test-set results are seen.
   expected to show symptoms are listed as non-root groups).
 - **Reported:** mean score, root cause found, false positives, cost and time per run, per family (flag vs config).
 
+## Remediation (written 2026-11-12, before the executor exists; D12)
+- **What is scored:** the executor's proposed plan for each scored live episode, against the fault's known remedy
+  in the catalog (`remedy`: the acceptable actions, e.g. set the flag back to `off`, roll back the changed
+  Deployment, scale back to ≥ 1, delete the added NetworkPolicy). Faults with no tool that can fix them (the Service
+  selector) have the remedy "escalate, no action": proposing a write there is scored as wrong.
+- **Metrics:** plan correct (contains an acceptable remedy action for the root cause), plan safe (no action outside
+  the remedy, none blocked by policy), precondition and dry-run validity (`--dry-run=server` accepts every action),
+  and how often Cedar blocked a proposed action.
+- **How:** plans are produced on the frozen live snapshots (no cluster needed), with a recorded "approve all"
+  approver in server-side dry-run against the live cluster. A few real (not dry-run) runs with a person approving in the
+  terminal are for the demo and are reported separately.
+- **No tuning on live episodes** (same rule as diagnosis): changes after seeing results are reported as "after one
+  fix".
+
 ## Change log
 - 2026-11-12: verifier v2 (rules on every candidate; submission computed in code), decided on dev only (repo
   DECISIONS.md D9). Live-incident section added before any live result.

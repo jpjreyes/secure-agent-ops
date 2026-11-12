@@ -145,3 +145,20 @@ Each entry: what we chose, the alternatives, and why. Numbers are filled in as t
   +0.15 (S9, S11, S21). The team's advantage on dev is **+0.15**, not +0.30, at ~3× the cost and ~4.5× the time.
 - **Implication:** the honest headline will be decided on the 30 × 3 test set; cost per correct diagnosis is
   reported next to the score. Earlier dev claims (D9) are superseded by these numbers.
+
+## D12. Executor: the model proposes, code executes exactly what a person approved (2026-11-12)
+- **Chose (option B of three):** the executor agent has only read-only tools and writes a structured plan (per action:
+  tool, arguments, why, expected effect, a precondition on the current state, and the undo). The graph pauses with
+  LangGraph `interrupt()` (durable through the checkpointer); the on-call person approves, edits or rejects; the
+  issuer signs the approved calls (hashes of server + tool + arguments). Code then runs exactly those calls through
+  the gateway with the executor's delegated identity, in order, checking each precondition first and stopping at
+  the first failure (idempotency keys make a resumed run safe); a verify step re-reads the alerts and reports.
+- **Alternatives:** A, the model calls the write tools itself after approval (drift between approved and executed
+  arguments; the model holds write tools while reading possibly poisoned telemetry). C, tiered autonomy (low-risk
+  actions without a person): dropped: speed is not a priority for this project.
+- **Why:** safety holds by construction, not by prompt: the model can't execute anything, what runs is
+  byte-identical to what was approved, preconditions catch a cluster that changed in between, Cedar still enforces
+  (no scale to zero, protected platform) even on approved calls. Matches OWASP's least agency / separate generation
+  from execution and the approval modes of shipping AI-SRE products (PagerDuty, Datadog). Plans can be scored
+  offline, which keeps the remediation eval cheap.
+- **Cost accepted:** a failed fix needs a new plan and a new approval.
