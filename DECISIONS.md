@@ -303,6 +303,10 @@ Each entry: what we chose, the alternatives, and why. Numbers are filled in as t
   (a single agent + verifier is the obvious next variant, not run: it would be a new configuration decided after
   seeing test). The team's other value is operational, not accuracy: per-agent least privilege, the read-only /
   write split, and the remediation path (D17, D20), which a single agent with every tool can't offer safely.
+- **Secondary figure (expansion step 4, labeled as such in the plan): all 40 scenarios, including the 10 dev ones the
+  team was tuned on, 3 runs each on dev:** A 0.542 [0.410, 0.668], C 0.601 [0.461, 0.735], C − A +0.059 [+0.008,
+  +0.118]. It excludes zero only because the dev scenarios are in it (dev alone: A 0.57, C 0.68), so it is biased
+  toward C and is not the headline; the held-out number above is.
 - **Limits:** 30 scenarios; 10 of them unsolved by every setup in every repeat (some need signals the snapshot
   doesn't have); one model family; Cloudflare 403s interrupted the run twice (the driver resumed, no runs lost or
   repeated, every result file is a complete run).
