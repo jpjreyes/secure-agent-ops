@@ -90,7 +90,10 @@ async def main() -> int:
             try:
                 guard.before_run(reserve=a.reserve)
                 start = time.time()
-                r = await (run_a(snap) if cond == "A" else run_c(snap, cond == "C-on", cp, cond))
+                try:
+                    r = await (run_a(snap) if cond == "A" else run_c(snap, cond == "C-on", cp, cond))
+                except team.NodeStop as ns:  # a stop inside a team node arrives wrapped
+                    raise ns.stop from None
                 r["wall_s"] = round(time.time() - start, 1)
             except guard.QuotaStop as e:
                 print(f"STOPPED: {e}", flush=True)
