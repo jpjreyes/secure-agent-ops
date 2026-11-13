@@ -270,7 +270,6 @@ Each entry: what we chose, the alternatives, and why. Numbers are filled in as t
   (the executor acted only where the evidence supported a fix), and the selector fault correctly escalated.
   Cost ≈ $0.04 (A) vs $0.18 (C) per episode.
 - **Reading:** two faults at once is where both setups fail, the same way: once a clear cause (a fresh rollout)
-  explains the alerts, neither looks for a second one. The team's verifier tests candidates; it does not ask "is
-  something else also wrong?". The next change to try (on dev, never on test): a verifier step that checks whether
-  the kept causes explain every firing alert, and sends the investigators back if not.
+  explains the alerts, neither looks for a second one. The benchmark's scenarios have one root cause each, so this
+  case is outside what the team was tuned for; the remediation result is what matters here.
 - **Limits:** 7 episodes × 1 run; diagnosis differences of one episode are noise.
