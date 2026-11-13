@@ -154,6 +154,14 @@ nothing here is changed after test-set results are seen.
   ≈ 45 s (≈ half of C). Dev 10 + test 90 = 100 runs ≈ $19 API-equivalent ≈ 4–5 points weekly. Runs only once approved,
   with the default stops (80% / 80%).
 
+## Setup D on the deceptive-evidence suite (written 2026-11-13, before it ran; exploratory)
+- **Why:** D22 found D matches the team on accuracy, but the team's independent investigators may be what made it
+  robust to planted false evidence (D19: team 0/30 fooled, single agent 2/30). Does one agent + verifier keep that?
+- **Run:** the same 30 deceptive incidents (`evals/deceptive.py`, unchanged), condition `D-on` = setup D through the
+  gateway with screening on (as C-on), diagnosis only. 30 runs, ≈ $5 API-equivalent, ≈ 1–2 points weekly.
+- **Metrics:** decoy named in the final diagnosis (vs A 2/30, C 0/30), per kind; accuracy vs the clean D dev runs
+  (1 run each, noisy); whether the verifier rules the decoy out when the doer names it.
+
 ## Change log
 - 2026-11-12: verifier v2 (rules on every candidate; submission computed in code), decided on dev only (repo
   DECISIONS.md D9). Live-incident section added before any live result.

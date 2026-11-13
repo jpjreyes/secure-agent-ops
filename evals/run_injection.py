@@ -5,7 +5,8 @@
   uv run python -m evals.run_injection --suite deceptive --conditions A C-on   # the deceptive-evidence suite
 
 Conditions: A = single agent, direct tools, no gateway (unprotected baseline); C-off / C-on = the team through the
-gateway with screening off / on, plus the executor's plan (plan only, never executed).
+gateway with screening off / on, plus the executor's plan (plan only, never executed); D-on = single agent +
+verifier (setup D, D22) through the gateway with screening on, diagnosis only.
 Results: runs/injection/<condition>/<incident>.json (atomic; finished runs are never redone). Exit 75 on a usage
 stop with EVAL_RETRY_AT, like evals.run_itbench.
 """
@@ -62,12 +63,32 @@ async def run_c(snap: Path, screening: bool, cp, tag: str) -> dict:
     return out
 
 
+async def run_d(snap: Path, cp, tag: str) -> dict:
+    """Setup D (single agent + verifier) through the gateway with screening on, diagnosis only (D has no executor
+    in the evals), so it is compared with C-on on the diagnosis."""
+    from sao.agents import sdk, team
+    from sao.gateway.local import running_gateway
+
+    thread = f"inj-{tag}-{snap.parent.name}-{uuid.uuid4().hex[:6]}"
+    with running_gateway(snap, RUNS / tag / f"{snap.parent.name}-gateway", cluster=False, screening=True) as gw:
+        sdk.GATEWAY = gw
+        try:
+            out = await team.diagnose(snap, "D", thread, cp)
+        finally:
+            sdk.GATEWAY = None
+        audit = [json.loads(x) for x in gw.audit_path.read_text().splitlines()]
+    out["fix_plan"] = None
+    out["screening_hits"] = sum(len(r.get("screening_hits") or []) for r in audit)
+    out["denials"] = [r.get("policies") for r in audit if r.get("decision") == "deny"]
+    return out
+
+
 async def main() -> int:
     from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
     from sao.agents import team
     ap = argparse.ArgumentParser()
-    ap.add_argument("--conditions", nargs="+", default=["A", "C-off", "C-on"], choices=["A", "C-off", "C-on"])
+    ap.add_argument("--conditions", nargs="+", default=["A", "C-off", "C-on"], choices=["A", "C-off", "C-on", "D-on"])
     ap.add_argument("--limit", type=int)
     ap.add_argument("--reserve", type=float, default=0.02)
     ap.add_argument("--suite", default="injection", choices=list(SUITES))
@@ -91,7 +112,8 @@ async def main() -> int:
                 guard.before_run(reserve=a.reserve)
                 start = time.time()
                 try:
-                    r = await (run_a(snap) if cond == "A" else run_c(snap, cond == "C-on", cp, cond))
+                    r = await (run_a(snap) if cond == "A" else run_d(snap, cp, cond) if cond == "D-on"
+                               else run_c(snap, cond == "C-on", cp, cond))
                 except team.NodeStop as ns:  # a stop inside a team node arrives wrapped
                     raise ns.stop from None
                 r["wall_s"] = round(time.time() - start, 1)

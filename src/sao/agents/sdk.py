@@ -23,10 +23,10 @@ GATEWAY = None  # a sao.gateway.local.GatewayHandle while an incident runs throu
 
 
 def agent_id(role: str) -> str:
-    """Agent identity at the gateway: investigator:<signal> → agent:investigator; the single agent of setup A is
-    read-only like an investigator."""
+    """Agent identity at the gateway: investigator:<signal> → agent:investigator; the single agent of setup A and
+    setup D's doer ("solo") are read-only like an investigator."""
     base = role.split(":")[0]
-    return f"agent:{'investigator' if base in ('A', 'investigator') else base}"
+    return f"agent:{'investigator' if base in ('A', 'investigator', 'solo') else base}"
 
 
 def _gateway_notice() -> str:

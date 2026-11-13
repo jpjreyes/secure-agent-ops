@@ -72,3 +72,9 @@ def test_b_and_c_still_start_with_the_commander():
     assert team.start({"setup": "C"}) == "commander_plan"
     assert team.start({"setup": "B"}) == "commander_plan"
     assert team.start({"setup": "D"}) == "solo"
+
+
+def test_d_doer_is_read_only_at_the_gateway():
+    assert sdk.agent_id("solo") == "agent:investigator"
+    assert sdk.agent_id("A") == "agent:investigator"
+    assert sdk.agent_id("verifier") == "agent:verifier"
