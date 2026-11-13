@@ -86,7 +86,7 @@ the agents. The design limits the damage by construction rather than by prompt. 
 
 ## Engineering decisions
 
-Every decision with alternatives, reasons and numbers is in [`DECISIONS.md`](DECISIONS.md) (D1–D16), including the
+Every decision with alternatives, reasons and numbers is in [`DECISIONS.md`](DECISIONS.md) (D1–D18), including the
 mistakes testing caught: a concurrency bug in the telemetry server that had depressed the baseline from 0.60 to
 0.35, a policy that named a tool that doesn't exist, faults that left state behind and contaminated later episodes.
 The evaluation protocol was written before results: [`evals/PLAN.md`](evals/PLAN.md).

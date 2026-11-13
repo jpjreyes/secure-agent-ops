@@ -9,8 +9,9 @@ version uses an API key. The guarantees and the setup match the CLI backend used
      stops unless the CLI reports apiKeySource == "none";
   3. hooks: only KNOWN_HOOKS (forced by the account's organization-managed settings, which no client setting can turn
      off) with their exact output; anything else stops the run;
-  4. usage guard: after each rate-limit report, at or above CLAUDE_EVAL_STOP_AT (default 80%) of the 5-hour or the
-     weekly window, the next run raises QuotaStop; paid extra usage (isUsingOverage) stops at once.
+  4. usage guard: after each rate-limit report, at or above CLAUDE_EVAL_STOP_AT (default 80%) of the weekly window,
+     or CLAUDE_EVAL_STOP_AT_5H (default: the same) of the 5-hour window, the next run raises QuotaStop; paid extra
+     usage (isUsingOverage) stops at once.
 
 EvalStop derives from BaseException so task-level `except Exception` handlers can't swallow "stop the run".
 """
@@ -23,6 +24,7 @@ from pathlib import Path
 HOME = Path(os.environ.get("CLAUDE_EVAL_HOME", Path.home() / ".config" / "claude-eval"))
 TOKEN, CONFIG = HOME / "oauth_token", HOME / "config"
 STOP_AT = float(os.environ.get("CLAUDE_EVAL_STOP_AT", "0.80"))
+STOP_AT_5H = float(os.environ.get("CLAUDE_EVAL_STOP_AT_5H", STOP_AT))
 REMOVE = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK",
           "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR")
 KNOWN_HOOKS = {
@@ -98,10 +100,15 @@ def _epoch(v) -> float | None:
         return None
 
 
-def retry_at(threshold: float = STOP_AT) -> float | None:
-    """When the windows at or above the threshold reset (the latest of them)."""
-    times = [_epoch(w.get("resetsAt") or w.get("resets_at")) for w in (last_windows or {}).values()
-             if (w.get("utilization") or 0.0) >= threshold]
+def limit(window: str) -> float:
+    """Stop threshold for one window: the 5-hour window may have its own, every other window uses STOP_AT."""
+    return STOP_AT_5H if window == "five_hour" else STOP_AT
+
+
+def retry_at(threshold: float | None = None, reserve: float = 0.0) -> float | None:
+    """When the windows at or above their threshold (minus `reserve`) reset (the latest of them)."""
+    times = [_epoch(w.get("resetsAt") or w.get("resets_at")) for k, w in (last_windows or {}).items()
+             if (w.get("utilization") or 0.0) >= (limit(k) if threshold is None else threshold) - reserve]
     times = [t for t in times if t]
     return max(times) if times else None
 
@@ -110,10 +117,11 @@ def before_run(reserve: float = 0.0) -> None:
     """Refuse to start new work at the stop threshold. `reserve` (a fraction of the window) is the measured cost
     of the work about to start: an episode starts only if it can finish below the threshold, so stops land between
     episodes instead of cutting one off."""
-    u = _util(last_windows)
-    if u + reserve >= STOP_AT:
-        raise QuotaStop(f"usage at {u:.0%} + reserve {reserve:.1%} (stop at {STOP_AT:.0%}): {last_windows}",
-                        retry_at=retry_at(STOP_AT - reserve))
+    over = {k: (w.get("utilization") or 0.0) for k, w in (last_windows or {}).items()
+            if (w.get("utilization") or 0.0) + reserve >= limit(k)}
+    if over:
+        shown = ", ".join(f"{k} {u:.0%} (stop at {limit(k):.0%})" for k, u in over.items())
+        raise QuotaStop(f"usage {shown} + reserve {reserve:.1%}: {last_windows}", retry_at=retry_at(reserve=reserve))
 
 
 def check(msg) -> None:
