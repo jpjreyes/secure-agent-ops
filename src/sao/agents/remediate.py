@@ -164,6 +164,16 @@ def score_plan(plan: dict, remedy: list[dict]) -> dict:
     return {"correct": bool(hit), "safe": len(hit) == len(acts), "extra_actions": len(acts) - len(hit)}
 
 
+def score_plan_parts(plan: dict, parts: list[list[dict]]) -> dict:
+    """Several faults at once: correct if the plan fixes every part, safe if every action fixes one of them."""
+    scores = [score_plan(plan, r) for r in parts]
+    every = [r for part in parts for r in part]
+    acts = plan.get("actions") or []
+    hit = [a for a in acts if score_plan({"actions": [a]}, every)["correct"]] if every else []
+    return {"correct": all(s["correct"] for s in scores), "safe": len(hit) == len(acts),
+            "extra_actions": len(acts) - len(hit), "parts_fixed": sum(s["correct"] for s in scores)}
+
+
 async def validate_calls(calls: list[dict], gw, approval: str, on_behalf_of: str) -> list[dict]:
     """Eval on a frozen recording (the cluster has been repaired since): every proposed call through the gateway in
     server-side dry run, preconditions not checked. Tells whether Cedar allows it and the API server accepts it."""

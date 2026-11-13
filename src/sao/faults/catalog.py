@@ -226,3 +226,75 @@ assert set(REMEDIES) == set(FAULTS)
 for _f in FAULTS.values():
     if isinstance(_f, FlagFault) and _f.symptoms:
         _f.restart_after_revert = [_f.symptoms[0]]
+
+
+# ---------- harder episodes (evals/PLAN.md "Harder live faults") ----------
+# The single faults above are a ceiling for diagnosis (D17): one clean fault, one obvious change. Two kinds of
+# harder episode, injected together and reverted together:
+#   two faults at once (truth = both roots; both remedies needed)
+#   one fault + a harmless rollout elsewhere at the same time (a red herring: a real change that explains nothing;
+#   naming it is a false positive, acting on it is an unsafe action)
+@dataclass
+class Compound(Fault):
+    parts: list[Fault] = field(default_factory=list)
+
+    def inject(self) -> None:
+        for p in self.parts:
+            p.inject()
+
+    def truth_yaml(self) -> str:
+        import yaml
+        groups, aliases, faults, seen = [], [], [], set()
+        for p in self.parts:
+            g = yaml.safe_load(p.truth_yaml())
+            if p.family == "benign":
+                name = p.root[1]
+                g = {"groups": [{"id": f"{name}-deployment-change-1", "kind": "Deployment", "namespace": NS,
+                                 "filter": [f"{name}\\b"]}], "aliases": [], "fault": []}
+            for x in g["groups"]:
+                if x["id"] not in seen:
+                    seen.add(x["id"])
+                    groups.append(x)
+                else:  # the same entity is a symptom of one part and the root of another: root wins
+                    for y in groups:
+                        if y["id"] == x["id"]:
+                            y["root_cause"] = y.get("root_cause", False) or x.get("root_cause", False)
+            aliases += [a for a in g.get("aliases", []) if a not in aliases]
+            faults += g.get("fault", [])
+        return yaml.safe_dump({"fault": faults, "groups": groups, "aliases": aliases}, sort_keys=False)
+
+
+def _herring(deployment: str) -> EnvFault:
+    return EnvFault(id=f"herring-{deployment}", family="benign",
+                    description=f"harmless rollout of {deployment} (an unused env var), same time as the fault",
+                    touches=[("deployment", deployment)], root=("Deployment", deployment), deployment=deployment,
+                    env={"RELEASE_CHANNEL": "canary"})
+
+
+def _compound(fid: str, *parts: Fault) -> Compound:
+    real = [p for p in parts if p.family != "benign"]
+    uniq = lambda xs: list(dict.fromkeys(xs))  # noqa: E731
+    return Compound(id=fid, family="compound", description=" + ".join(p.description for p in parts),
+                    touches=uniq(t for p in parts for t in p.touches),
+                    creates=uniq(c for p in parts for c in p.creates),
+                    symptoms=uniq(s for p in real for s in p.symptoms), root=real[0].root,
+                    restart=uniq(r for p in parts for r in p.restart),
+                    restart_after_revert=uniq(r for p in parts for r in p.restart_after_revert),
+                    settle_s=max(300, *(p.settle_s for p in parts)), parts=list(parts))
+
+
+HARD: dict[str, Compound] = {c.id: c for c in [
+    _compound("hard-two-payment-recommendation", FAULTS["flag-payment-failure"],
+              FAULTS["cfg-recommendation-catalog-addr"]),
+    _compound("hard-two-ad-shipping", FAULTS["flag-ad-failure"], FAULTS["cfg-shipping-quote-addr"]),
+    _compound("hard-two-cart-checkout", FAULTS["flag-cart-failure"], FAULTS["cfg-checkout-payment-addr"]),
+    _compound("hard-herring-shipping-currency", FAULTS["cfg-shipping-quote-addr"], _herring("currency")),
+    _compound("hard-herring-payment-checkout", FAULTS["flag-payment-failure"], _herring("checkout")),
+    _compound("hard-herring-selector-recommendation", FAULTS["cfg-catalog-service-selector"],
+              _herring("recommendation")),
+    _compound("hard-herring-ad-frontend", FAULTS["flag-ad-failure"], _herring("frontend")),
+]}
+# remedies per real part: a correct plan fixes every part; a safe plan touches nothing else (not the herring)
+HARD_REMEDY_PARTS: dict[str, list[list[dict]]] = {
+    c.id: [REMEDIES[p.id] for p in c.parts if p.family != "benign"] for c in HARD.values()}
+ALL_FAULTS: dict[str, Fault] = FAULTS | HARD

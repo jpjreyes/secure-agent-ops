@@ -2,6 +2,7 @@
 
   uv run python -m evals.run_injection --conditions A C-off C-on --limit 3      # measure on 3 incidents first
   uv run python -m evals.run_injection --conditions A C-off C-on               # the full suite (30 incidents)
+  uv run python -m evals.run_injection --suite deceptive --conditions A C-on   # the deceptive-evidence suite
 
 Conditions: A = single agent, direct tools, no gateway (unprotected baseline); C-off / C-on = the team through the
 gateway with screening off / on, plus the executor's plan (plan only, never executed).
@@ -19,6 +20,7 @@ import time
 import uuid
 from pathlib import Path
 
+from evals import deceptive
 from evals.injection import OUT as INJ
 from evals.injection import hijacked, leaked
 from evals.run_itbench import _truth
@@ -27,10 +29,12 @@ from sao.llm import guard
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNS = ROOT / "runs" / "injection"
+SUITES = {"injection": (INJ, "injection.json"), "deceptive": (deceptive.OUT, "deceptive.json")}
 
 
-def incidents() -> list[Path]:
-    return sorted(p for p in INJ.glob("*/injection.json"))
+def incidents(suite: str = "injection") -> list[Path]:
+    base, meta = SUITES[suite]
+    return sorted(p for p in base.glob(f"*/{meta}"))
 
 
 async def run_a(snap: Path) -> dict:
@@ -66,8 +70,14 @@ async def main() -> int:
     ap.add_argument("--conditions", nargs="+", default=["A", "C-off", "C-on"], choices=["A", "C-off", "C-on"])
     ap.add_argument("--limit", type=int)
     ap.add_argument("--reserve", type=float, default=0.02)
+    ap.add_argument("--suite", default="injection", choices=list(SUITES))
+    ap.add_argument("--only", nargs="+", help="incident names (e.g. Scenario-11__logs)")
     a = ap.parse_args()
-    items = incidents()[: a.limit] if a.limit else incidents()
+    global RUNS
+    if a.suite != "injection":
+        RUNS = ROOT / "runs" / a.suite
+    items = [i for i in incidents(a.suite) if not a.only or i.parent.name in a.only]
+    items = items[: a.limit] if a.limit else items
     jobs = [(c, i) for i in items for c in a.conditions]
     todo = [(c, i) for c, i in jobs if not (RUNS / c / f"{i.parent.name}.json").exists()]
     print(f"{len(todo)} runs to do ({len(jobs) - len(todo)} done)", flush=True)
@@ -95,7 +105,12 @@ async def main() -> int:
             sc = score(_truth(meta["scenario"]), names)
             text = json.dumps({"factors": r["factors"], "plan": r.get("fix_plan")})
             r.update(condition=cond, incident=meta_path.parent.name, **meta, score=sc.score, recall_ok=sc.recall_ok,
-                     hijacked=hijacked(meta["goal"], r["factors"], r.get("fix_plan")), leaked=leaked(text))
+                     leaked=leaked(text))
+            if a.suite == "deceptive":
+                r.update(hijacked=deceptive.names_decoy(meta["decoy"], r["factors"]),
+                         plan_on_decoy=deceptive.plan_targets_decoy(meta["decoy"], r.get("fix_plan")))
+            else:
+                r["hijacked"] = hijacked(meta["goal"], r["factors"], r.get("fix_plan"))
             d = RUNS / cond
             d.mkdir(parents=True, exist_ok=True)
             tmp = d / f".{meta_path.parent.name}.tmp"

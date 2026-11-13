@@ -43,10 +43,11 @@ def snap_dir(sid: str) -> Path:
     return LIVE / sid / "snapshot" if (LIVE / sid / "truth.yaml").exists() else SNAP / sid
 
 
-def live_episodes() -> list[str]:
-    """Recorded live episodes whose expected alerts fired (an episode without symptoms is reported, not scored)."""
+def live_episodes(hard: bool = False) -> list[str]:
+    """Recorded live episodes whose expected alerts fired (an episode without symptoms is reported, not scored).
+    The harder episodes (hard-*) are their own set."""
     out = []
-    for ep in sorted(LIVE.glob("*/episode.json")):
+    for ep in sorted(LIVE.glob(f"{'hard-' if hard else '[!h]'}*/episode.json")):
         d = json.loads(ep.read_text())
         if d.get("complete") and d.get("symptom_observed") and d.get("baseline_clean", True):
             out.append(ep.parent.name)
@@ -79,7 +80,7 @@ async def run_remediation(sid: str, k: int, tag: str, cp, gw) -> dict:
     import uuid
 
     from sao.agents import remediate, team
-    from sao.faults.catalog import REMEDIES
+    from sao.faults.catalog import HARD_REMEDY_PARTS, REMEDIES
     from sao.gateway.approvals import sign_approval
     from sao.gateway.local import ONCALL
     from sao.incident import run_incident
@@ -96,7 +97,8 @@ async def run_remediation(sid: str, k: int, tag: str, cp, gw) -> dict:
     fault = json.loads((LIVE / sid / "episode.json").read_text())["fault"]
     out = team.team_result(values)
     out["fix_plan"] = plan
-    out["plan_score"] = remediate.score_plan(plan, REMEDIES[fault])
+    out["plan_score"] = (remediate.score_plan_parts(plan, HARD_REMEDY_PARTS[fault]) if fault in HARD_REMEDY_PARTS
+                         else remediate.score_plan(plan, REMEDIES[fault]))
     if captured.get("calls"):
         appr = sign_approval(gw.issuer.signer, gw.issuer.iss, ONCALL, captured["calls"], thread)
         out["dry_run"] = await remediate.validate_calls(captured["calls"], gw, appr, ONCALL)
@@ -194,7 +196,7 @@ async def run_all(a, todo: list[tuple[str, int]], out_dir: Path) -> int:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--setup", default="A", choices=["A", "B", "C"])
-    ap.add_argument("--split", choices=["dev", "test", "live"],
+    ap.add_argument("--split", choices=["dev", "test", "live", "live-hard"],
                     help="live = recorded live episodes with symptoms (runs/live), results under runs/itbench/live-*")
     ap.add_argument("--ids", nargs="*")
     ap.add_argument("--repeats", type=int, default=1)
@@ -211,15 +213,16 @@ def main() -> None:
                          "fits below the 80%% stop")
     a = ap.parse_args()
     split = json.loads((ROOT / "evals/split.json").read_text())
-    ids = a.ids or (live_episodes() if a.split == "live" else split[a.split or "dev"])
+    live = (a.split or "").startswith("live")
+    ids = a.ids or (live_episodes(hard=a.split == "live-hard") if live else split[a.split or "dev"])
     if a.split == "test" or any(i in split["test"] for i in ids):
         if not a.confirm_test and input("This touches TEST scenarios (scored once, see evals/PLAN.md). "
                                         "Type 'test' to continue: ") != "test":
             return
     if a.setup == "A":
-        out_dir = RUNS / f"{'live-' if a.split == 'live' else ''}A-{a.model}{'' if a.tag == 'v1' else '-' + a.tag}"
+        out_dir = RUNS / f"{a.split + '-' if live else ''}A-{a.model}{'' if a.tag == 'v1' else '-' + a.tag}"
     else:
-        out_dir = RUNS / f"{'live-' if a.split == 'live' else ''}{a.setup}-{a.tag}"
+        out_dir = RUNS / f"{a.split + '-' if live else ''}{a.setup}-{a.tag}"
         pin_config(out_dir, {"setup": a.setup, "via_gateway": a.via_gateway or a.remediate,
                              "remediate": a.remediate, **team_config()})
     jobs = [(sid, k) for sid in ids for k in range(1, a.repeats + 1)]

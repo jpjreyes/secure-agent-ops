@@ -25,7 +25,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from sao.faults import control
-from sao.faults.catalog import FAULTS
+from sao.faults.catalog import ALL_FAULTS, FAULTS, HARD
 
 ROOT = Path(__file__).resolve().parents[3]
 LIVE = ROOT / "runs" / "live"
@@ -90,7 +90,7 @@ def wait_quiet(max_s: int = 600, poll_s: int = 20) -> float:
 
 def record(fault_id: str, baseline_s: int = 120, after_s: int = 30, hold: bool = False,
            name: str | None = None) -> Path:
-    f = FAULTS[fault_id]
+    f = ALL_FAULTS[fault_id]
     reverted = control.revert_all()
     if reverted:
         print(f"reverted leftover faults: {reverted}")
@@ -145,7 +145,7 @@ def record(fault_id: str, baseline_s: int = 120, after_s: int = 30, hold: bool =
     return ep
 
 
-def record_all(baseline_s: int, rep: int = 1) -> None:
+def record_all(baseline_s: int, rep: int = 1, ids: list[str] | None = None) -> None:
     """Record every fault once (episode runs/live/<fault>-r<rep>); finished episodes are skipped, so rerunning
     after a crash continues. A half-written episode (no episode.json) is deleted and recorded again."""
     import shutil
@@ -153,7 +153,7 @@ def record_all(baseline_s: int, rep: int = 1) -> None:
         p = LIVE / f"{fid}-r{rep}" / "episode.json"
         return p.exists() and json.loads(p.read_text()).get("complete", False)
 
-    todo = [f for f in FAULTS if not complete(f)]
+    todo = [f for f in (ids or FAULTS) if not complete(f)]
     t0 = time.time()
     for i, fid in enumerate(todo, 1):
         ep = LIVE / f"{fid}-r{rep}"
@@ -166,12 +166,13 @@ def record_all(baseline_s: int, rep: int = 1) -> None:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("fault", nargs="?", choices=sorted(FAULTS))
+    ap.add_argument("fault", nargs="?", choices=sorted(ALL_FAULTS))
     ap.add_argument("--all", action="store_true", help="record every fault once (resumable)")
+    ap.add_argument("--hard", action="store_true", help="record every harder episode once (resumable)")
     ap.add_argument("--baseline", type=int, default=120)
     ap.add_argument("--hold", action="store_true")
     a = ap.parse_args()
-    if a.all:
-        record_all(a.baseline)
+    if a.all or a.hard:
+        record_all(a.baseline, ids=sorted(HARD) if a.hard else None)
     else:
         record(a.fault, a.baseline, hold=a.hold)

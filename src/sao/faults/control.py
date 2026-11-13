@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 from sao import kube
-from sao.faults.catalog import FAULTS, Fault
+from sao.faults.catalog import ALL_FAULTS, Fault
 
 ROOT = Path(__file__).resolve().parents[3]
 STATE = ROOT / "runs" / "faults" / "active.json"
@@ -36,7 +36,7 @@ def active() -> dict:
 
 def inject(fault_id: str, wait: bool = True) -> dict:
     """Inject one fault (only one at a time). Returns its record (id, time injected, saved objects)."""
-    f: Fault = FAULTS[fault_id]
+    f: Fault = ALL_FAULTS[fault_id]
     state = _load()
     if state:
         raise RuntimeError(f"a fault is already active: {list(state)}; revert it first")
