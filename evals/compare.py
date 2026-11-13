@@ -26,7 +26,8 @@ def load(name: str) -> dict[str, list[dict]]:
 
 def main(names: list[str]) -> None:
     data = {n: load(n) for n in names}
-    common = sorted(set.intersection(*(set(d) for d in data.values())), key=lambda s: int(s.split("-")[1]))
+    common = sorted(set.intersection(*(set(d) for d in data.values())),
+                    key=lambda s: (0, int(s.split("-")[1])) if s.startswith("Scenario-") else (1, s))
     print(f"{len(common)} scenarios in common\n")
     print("| setup | runs | mean score | root cause found | mean FP | $/run API-eq | s/run |")
     print("|---|---|---|---|---|---|---|")

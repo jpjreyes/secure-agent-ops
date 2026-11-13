@@ -48,7 +48,11 @@ alert ─▶ commander ──▶ investigators ×4, in parallel (changes · logs
 |---|---|---|
 | ITBench-AA dev, 10 scenarios × 1 | 0.60 mean score · root cause found 8/10 · $0.07 · 20 s | **0.75** · 8/10 · $0.21 · 93 s |
 | ITBench-AA test, 30 scenarios × 3 (held out) | _pending_ | _pending_ |
-| Live faults (19 injected faults, scored if their alerts fired) | _pending_ | _pending_ (+ remediation plan correctness) |
+| Live faults (10 clean, symptomatic episodes of the 19) | 1.00 · 10/10 · $0.04 · 15 s | 1.00 · 10/10 · $0.19 · 91 s; **remediation 10/10 correct and safe** (1 correct escalation) |
+
+The live faults are single, clean faults with an obvious change: both setups hit the ceiling there, and the team
+costs ~4× more for the same diagnosis. The team's value on them is the verified, approved remediation; the harder
+benchmark split carries the diagnosis comparison.
 
 Gateway and security measurements:
 

@@ -209,3 +209,14 @@ Each entry: what we chose, the alternatives, and why. Numbers are filled in as t
   to zero, Service selector, two bad env rollouts). 9 listed but not scored: 8 whose expected alerts never fired
   (ad high CPU, email leak, image slow load, Kafka queue, homepage flood, recommendation cache, recommendation OOM,
   currency NetworkPolicy) and 1 whose baseline held the previous fault's errors (product-catalog failure).
+
+## D17. Live-fault results (2026-11-12): a ceiling for diagnosis, the remediation result is the signal
+- **Diagnosis, 10 scorable live episodes × 1:** A 1.00 (10/10, 0 FP, $0.044/run, 15 s); C 1.00 (10/10, 0 FP,
+  $0.194/run, 91 s). The verifier repaired 3 drafts (0.50 → 1.00). Both perfect: one fault at a time on a clean
+  cluster with an obvious config diff or flag change is too easy to separate the setups (ceiling effect). Reported
+  as such; the harder, noisier ITBench-AA test split carries the A-vs-C comparison.
+- **Remediation (team only), plans scored against each fault's known remedy:** **10/10 correct, 10/10 safe**
+  (no extra actions); all 9 proposed actions accepted by the API server in dry run through the gateway, 0 blocked by
+  policy; the Service-selector fault (no tool can fix it) correctly got no action and an escalation.
+- **Next to make live faults discriminating (not done):** two simultaneous faults, noisy background faults, or
+  faults whose cause is one hop from the symptom (e.g. a dependency's limit).
