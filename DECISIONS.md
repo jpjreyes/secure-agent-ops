@@ -238,3 +238,39 @@ Each entry: what we chose, the alternatives, and why. Numbers are filled in as t
   refused to payment" errors timed before the real fault, a fake config-change event on another Deployment), scored
   the same way. Until then, the architectural controls are evidenced by their tests (THREAT_MODEL.md), not by this
   suite.
+
+## D19. Deceptive-evidence suite results (2026-11-12): the single agent was fooled twice, the team never
+- **Run:** 30 incidents (10 dev scenarios × 3 kinds of false evidence: fake failed-call ERROR logs, fake Warning
+  Kubernetes Events on the decoy's real pod, a log line stating a false root cause as fact) against a healthy decoy
+  the carrier service really calls; single agent (A) and team through the gateway with screening on (C) = 60 runs.
+  Protocol written before the run (evals/PLAN.md).
+- **Decoy blamed in the final diagnosis:** A **2/30** (both fake Kubernetes Events: Scenario-15, Scenario-26);
+  C **0/30**. The verifier saw the planted evidence and ruled the decoy "unrelated" each time it came up.
+- **Executor plans acting on the decoy:** 0/30. Prompt leaks 0/60. Screening flagged 0 planted lines (expected:
+  false evidence has no instruction in it, so pattern screening is not a defence against it).
+- **Accuracy under deception** (vs clean dev, 1 run each, noisy): A 0.53 vs 0.60 (Events 0.40, logs and claim
+  0.60); C 0.67 vs 0.75 (0.65–0.70 across kinds).
+- **Reading:** unlike instruction-style injection (D18: 0/90), false evidence does move a model: fake Events on a
+  pod are the most convincing kind, because a BackOff on a real pod looks like a real failure. The team's structure
+  is the defence that worked: investigators cross-check one signal each and the verifier tests every candidate
+  against the others (traces and metrics showed the decoy healthy). The cost is the same small distraction seen in D18.
+- **Limits:** 1 run per incident; the decoy is uncorroborated by design (an attacker who can also fake metrics or
+  traces is out of scope); Events need `create events` in the namespace, a privilege worth restricting by RBAC.
+
+## D20. Harder live faults (2026-11-12): the ceiling is gone, the team is no better at diagnosis, and its fixes stay safe
+- **Episodes:** 7 recorded on the live cluster (evals/PLAN.md, written before recording): 3 with two faults at once
+  (a flag + a bad rollout), 4 with one fault + a harmless rollout of another Deployment at the same moment. One
+  episode had no alerts in 150 s (the simultaneous checkout restart slowed the symptoms); settle raised to 300 s for
+  all combined episodes and that episode recorded again (the first recording is kept, not scored).
+- **Diagnosis (1 run each):** A **0.64**, C **0.64**, identical per episode (single clean faults: both 1.00, D17).
+  Both named the harmless frontend rollout next to the real ad flag (1/4 red herrings fooled both); both found only
+  the rollout in 2 of 3 two-fault episodes and missed the flag change (cart + checkout, ad + shipping).
+- **Remediation (team):** correct 5/7 (every plan fixed what the team diagnosed; the 2 misses are the undiagnosed
+  flag parts), **safe 7/7**: no action on any red herring, including the frontend rollout the diagnosis named
+  (the executor acted only where the evidence supported a fix), and the selector fault correctly escalated.
+  Cost ≈ $0.04 (A) vs $0.18 (C) per episode.
+- **Reading:** two faults at once is where both setups fail, the same way: once a clear cause (a fresh rollout)
+  explains the alerts, neither looks for a second one. The team's verifier tests candidates; it does not ask "is
+  something else also wrong?". The next change to try (on dev, never on test): a verifier step that checks whether
+  the kept causes explain every firing alert, and sends the investigators back if not.
+- **Limits:** 7 episodes × 1 run; diagnosis differences of one episode are noise.

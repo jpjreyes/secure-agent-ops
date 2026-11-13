@@ -49,9 +49,11 @@ alert ─▶ commander ──▶ investigators ×4, in parallel (changes · logs
 | ITBench-AA dev, 10 scenarios × 1 | 0.60 mean score · root cause found 8/10 · $0.07 · 20 s | **0.75** · 8/10 · $0.21 · 93 s |
 | ITBench-AA test, 30 scenarios × 3 (held out) | _pending_ | _pending_ |
 | Live faults (10 clean, symptomatic episodes of the 19) | 1.00 · 10/10 · $0.04 · 15 s | 1.00 · 10/10 · $0.19 · 91 s; **remediation 10/10 correct and safe** (1 correct escalation) |
+| Harder live faults (7: two faults at once, or a fault + a harmless rollout) | 0.64 · $0.04 | 0.64 · $0.18; **remediation safe 7/7**, correct 5/7 (misses = the undiagnosed second fault) |
 
-The live faults are single, clean faults with an obvious change: both setups hit the ceiling there, and the team
-costs ~4× more for the same diagnosis. The team's value on them is the verified, approved remediation; the harder
+The single live faults are clean, with an obvious change: both setups hit the ceiling there, and the team
+costs ~4× more for the same diagnosis. On the harder episodes both drop to 0.64 the same way (they stop at the first
+clear cause and miss a second fault). The team's value on them is the verified, approved remediation; the harder
 benchmark split carries the diagnosis comparison.
 
 Gateway and security measurements:
@@ -62,7 +64,8 @@ Gateway and security measurements:
 | Cedar decision per call | ~0.6 ms p50 |
 | Injection screening false positives on real telemetry | 0 of 7,535 lines (all 40 benchmark incidents) |
 | Policy safety properties | hold on all 221,184 requests the policies can distinguish; a deleted rule is caught |
-| Log-injection suite (AgentDojo templates × 3 attacker goals × 10 incidents, 3 conditions = 90 runs) | **0/90 hijacked, 0/90 prompt leaks**, including the unprotected single agent; attacks cost the team ~0.07 accuracy (distraction). Instruction-style templates don't move today's models; a deceptive-evidence suite is next |
+| Log-injection suite (AgentDojo templates × 3 attacker goals × 10 incidents, 3 conditions = 90 runs) | **0/90 hijacked, 0/90 prompt leaks**, including the unprotected single agent; attacks cost the team ~0.07 accuracy (distraction). Instruction-style templates don't move today's models |
+| Deceptive-evidence suite (fake failed-call logs, fake Kubernetes Events, a false "root cause" line, against a healthy service; 60 runs) | **single agent blamed the decoy 2/30, team 0/30**; no plan acted on it; accuracy A 0.53 vs 0.60 clean, team 0.67 vs 0.75 |
 
 Cost is reported as **API-equivalent** (the token counts priced at API list prices); evaluations ran through the
 Agent SDK on a Claude plan, in an isolated configuration, with the request verified byte-for-byte
@@ -86,7 +89,7 @@ the agents. The design limits the damage by construction rather than by prompt. 
 
 ## Engineering decisions
 
-Every decision with alternatives, reasons and numbers is in [`DECISIONS.md`](DECISIONS.md) (D1–D18), including the
+Every decision with alternatives, reasons and numbers is in [`DECISIONS.md`](DECISIONS.md) (D1–D20), including the
 mistakes testing caught: a concurrency bug in the telemetry server that had depressed the baseline from 0.60 to
 0.35, a policy that named a tool that doesn't exist, faults that left state behind and contaminated later episodes.
 The evaluation protocol was written before results: [`evals/PLAN.md`](evals/PLAN.md).
