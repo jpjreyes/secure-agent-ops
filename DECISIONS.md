@@ -273,3 +273,36 @@ Each entry: what we chose, the alternatives, and why. Numbers are filled in as t
   explains the alerts, neither looks for a second one. The benchmark's scenarios have one root cause each, so this
   case is outside what the team was tuned for; the remediation result is what matters here.
 - **Limits:** 7 episodes × 1 run; diagnosis differences of one episode are noise.
+
+## D21. Held-out test results (2026-11-13): the verifier is what works; the team as a whole is not significantly better
+- **Run (evals/PLAN.md, fixed before any test run):** ITBench-AA test split, 30 scenarios. Single agent (A) and full
+  team (C) 5 repeats each (3 planned; the pre-registered rule added 2 because the A-vs-C interval included zero),
+  team without verifier (B) 3 repeats on all 30 (expansion step 1). 390 scored runs, request byte-identical to the
+  capture (evals/CAPTURE.md), code frozen before the run. Intervals: bootstrap over scenarios, paired by scenario
+  (`evals/paired_ci.py`).
+
+| | A single agent | B team, no verifier | C full team |
+|---|---|---|---|
+| Mean score [95% CI] | 0.533 [0.373, 0.690] | 0.487 [0.343, 0.628] | **0.573** [0.407, 0.733] |
+| Root cause found | 58% | 60% | 58% |
+| False positives per run | 0.63 | 0.72 | **0.43** |
+| API-equivalent $ per run | 0.084 | 0.098 | 0.207 |
+| Wall time per run | 21 s | 65 s | 87 s |
+
+- **Paired differences:** C − B **+0.086 [+0.016, +0.157]** (the verifier; better on 12 scenarios, worse on 3);
+  C − A +0.040 [−0.010, +0.097] (not significant; better on 7, worse on 4); B − A −0.046 [−0.132, +0.042].
+  The team's own draft scored 0.464; the verifier took it to 0.573.
+- **Reading:** finding the root cause is the same for all three (~58–60%): more agents reading more signals do not
+  find more causes. What separates them is false positives. Splitting the work across investigators adds suspects
+  (B has the most), and the verifier, which tests every candidate against the others' evidence and keeps only causes
+  nothing else explains, removes ~40% of them. The full team ends ahead of the single agent, but by less than the
+  noise across 30 scenarios, at 2.5× the cost and 4× the time.
+- **Against dev (D11):** dev showed A 0.60 vs C 0.75 on 10 scenarios × 1 run; the held-out test confirms the
+  direction and the verifier's role, not the size. Dev overstated the gap, which is why the test split exists.
+- **What this means for the design:** the verifier is the part to keep in any setup, including a single agent
+  (a single agent + verifier is the obvious next variant, not run: it would be a new configuration decided after
+  seeing test). The team's other value is operational, not accuracy: per-agent least privilege, the read-only /
+  write split, and the remediation path (D17, D20), which a single agent with every tool can't offer safely.
+- **Limits:** 30 scenarios; 10 of them unsolved by every setup in every repeat (some need signals the snapshot
+  doesn't have); one model family; Cloudflare 403s interrupted the run twice (the driver resumed, no runs lost or
+  repeated, every result file is a complete run).

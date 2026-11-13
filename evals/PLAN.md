@@ -141,3 +141,7 @@ nothing here is changed after test-set results are seen.
   are now a failed answer for that agent instead of a crash of the episode.
 - 2026-11-12: test-run size measured on dev (A $0.072, C $0.210, B ≈ $0.096 per run API-equivalent; ≈ $28 for
   A/C 30 × 3 + B 10 × 3, ≈ 2 five-hour windows, ≈ 10–12 points weekly); extra-repeats rule made explicit.
+- 2026-11-13: test run done (D21). Expansion steps executed in the fixed order: B on all 30 (step 1); A and C to 5
+  repeats (step 2: the paired A-vs-C interval after 3 repeats was +0.028 [−0.022, +0.083]); dev × 3 for the
+  secondary all-40 figure (step 4). The weekly usage stop was raised to 90% for this one night; nothing in the
+  scoring or the protocol changed.

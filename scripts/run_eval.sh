@@ -6,8 +6,8 @@
 # - Usage stop (80% of the 5-hour or weekly window): waits until that window resets, then resumes the same command.
 #   Waits longer than MAX_WAIT_S (default 6 h) end the script; rerun it later and it picks up where it stopped.
 # - Paid extra usage or an unclean environment: stops for good (exit 2).
-# - Crash: makes sure the checkpointer database is up and resumes; gives up after 3 crashes in a row without a new
-#   saved run.
+# - Crash: makes sure the checkpointer database is up and resumes with backoff (1 to 30 min); gives up after 7
+#   crashes in a row without a new saved run.
 # Interrupted team episodes resume from their last finished step (Postgres checkpoint), so a stop costs at most the
 # agent calls that were in flight.
 set -uo pipefail
@@ -42,8 +42,10 @@ while true; do
       crashes=0 ;;
     *)
       if [ "$after" -gt "$before" ]; then crashes=0; else crashes=$((crashes + 1)); fi
-      [ "$crashes" -ge 3 ] && { log "3 crashes in a row without progress (exit $code); giving up"; exit "$code"; }
-      log "crash (exit $code); restarting in 60 s"
-      sleep 60 ;;
+      # backoff 1, 2, 4, 8, 16, 30 min: a network or login hiccup (e.g. a Cloudflare 403) usually clears
+      [ "$crashes" -ge 7 ] && { log "7 crashes in a row without progress (exit $code); giving up"; exit "$code"; }
+      wait_s=$(( 60 * (1 << (crashes > 0 ? crashes - 1 : 0)) )); [ "$wait_s" -gt 1800 ] && wait_s=1800
+      log "crash (exit $code); restarting in $(( wait_s / 60 )) min"
+      sleep "$wait_s" ;;
   esac
 done

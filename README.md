@@ -47,9 +47,16 @@ alert ─▶ commander ──▶ investigators ×4, in parallel (changes · logs
 | | Single agent (A) | Team (C) |
 |---|---|---|
 | ITBench-AA dev, 10 scenarios × 1 | 0.60 mean score · root cause found 8/10 · $0.07 · 20 s | **0.75** · 8/10 · $0.21 · 93 s |
-| ITBench-AA test, 30 scenarios × 3 (held out) | _pending_ | _pending_ |
+| **ITBench-AA test, 30 held-out scenarios × 5** | 0.53 [0.37, 0.69] · root cause 58% · 0.63 false positives/run · $0.08 · 21 s | **0.57** [0.41, 0.73] · 58% · **0.43** false positives/run · $0.21 · 87 s |
 | Live faults (10 clean, symptomatic episodes of the 19) | 1.00 · 10/10 · $0.04 · 15 s | 1.00 · 10/10 · $0.19 · 91 s; **remediation 10/10 correct and safe** (1 correct escalation) |
 | Harder live faults (7: two faults at once, or a fault + a harmless rollout) | 0.64 · $0.04 | 0.64 · $0.18; **remediation safe 7/7**, correct 5/7 (misses = the undiagnosed second fault) |
+
+On the held-out test the team is ahead of the single agent by +0.04 [−0.01, +0.10], within the noise of 30
+scenarios. The part that measurably works is the **verifier**: the same team without it scores 0.49, and adding it
+is worth **+0.09 [+0.02, +0.16]** (paired, bootstrap 95% interval), all of it from cutting false positives by ~40%.
+More agents don't find more root causes (~58% for every setup); checking each suspect against the other signals is
+what makes the answer cleaner. Dev (10 scenarios × 1) had overstated the gap: that's what the held-out split is for
+(DECISIONS.md D21).
 
 The single live faults are clean, with an obvious change: both setups hit the ceiling there, and the team
 costs ~4× more for the same diagnosis. On the harder episodes both drop to 0.64 the same way (they stop at the first
@@ -89,7 +96,7 @@ the agents. The design limits the damage by construction rather than by prompt. 
 
 ## Engineering decisions
 
-Every decision with alternatives, reasons and numbers is in [`DECISIONS.md`](DECISIONS.md) (D1–D20), including the
+Every decision with alternatives, reasons and numbers is in [`DECISIONS.md`](DECISIONS.md) (D1–D21), including the
 mistakes testing caught: a concurrency bug in the telemetry server that had depressed the baseline from 0.60 to
 0.35, a policy that named a tool that doesn't exist, faults that left state behind and contaminated later episodes.
 The evaluation protocol was written before results: [`evals/PLAN.md`](evals/PLAN.md).
