@@ -78,3 +78,35 @@ def test_d_doer_is_read_only_at_the_gateway():
     assert sdk.agent_id("solo") == "agent:investigator"
     assert sdk.agent_id("A") == "agent:investigator"
     assert sdk.agent_id("verifier") == "agent:verifier"
+
+
+def _verdict_run(monkeypatch, verdicts):
+    async def run_agent(*, role: str, **kw) -> dict:
+        out = ({"contributing_factors": [{"name": "otel-demo/Deployment/payment", "reasoning": "r", "evidence": "e"}]}
+               if role == "solo" else {"verdicts": verdicts})
+        return {"role": role, "output": out, "is_error": False, "stop": "success", "turns": 1, "tool_calls": [],
+                "cost_usd_api_equivalent": 0.0, "input_tokens": 0, "output_tokens": 0, "wall_s": 0.0,
+                "model": kw["model"]}
+    monkeypatch.setattr(sdk, "run_agent", run_agent)
+    monkeypatch.setattr(guard, "last_windows", None)
+
+    async def go():
+        graph = team.build().compile(checkpointer=MemorySaver())
+        return await graph.ainvoke({"snapshot": "/tmp/snap", "setup": "D", "remediate": True},
+                                   {"configurable": {"thread_id": "esc"}})
+    return asyncio.run(go())
+
+
+def test_no_verified_cause_escalates_instead_of_resubmitting_the_draft(monkeypatch):
+    values = _verdict_run(monkeypatch, [{"entity": "otel-demo/Deployment/payment", "verdict": "symptom",
+                                         "explained_by": None, "reasoning": "r", "evidence": "e"}])
+    assert values["final"]["contributing_factors"] == []
+    assert "hand the incident to a person" in values["final"]["escalate"]
+    assert "fix_plan" not in values  # nothing to fix automatically: no executor, no approval request
+    assert team.team_result(values, "D")["factors"] == []
+
+
+def test_a_verifier_that_gives_no_verdicts_keeps_the_draft_marked_unverified(monkeypatch):
+    values = _verdict_run(monkeypatch, [])
+    assert [f["name"] for f in values["final"]["contributing_factors"]] == ["otel-demo/Deployment/payment"]
+    assert values["final"]["unverified"] is True

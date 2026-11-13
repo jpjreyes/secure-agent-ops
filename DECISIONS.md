@@ -357,3 +357,18 @@ Each entry: what we chose, the alternatives, and why. Numbers are filled in as t
   where an attacker could write logs or Events. Separately, the empty-verdict fallback should escalate ("no
   verified cause") instead of resubmitting the draft. Not changed here: it would be a fix decided after seeing
   test-adjacent results, to be measured on fresh incidents.
+
+## D24. No verified cause → escalate, not resubmit the draft (2026-11-13)
+- **Change:** when the verifier rules every candidate a symptom or unrelated, the answer is now "no verified cause"
+  with an escalation to a person, and no fix is planned. Before, the unverified draft was resubmitted, which is how
+  a decoy the verifier had rejected came back in D23. If the verifier gives no verdicts at all (fails, turn cap), the
+  draft is still used, now marked `unverified`. `sao.agents.team.verify`, tested in `tests/test_setup_d.py`.
+- **Measured by replay, no new model calls:** the change only touches code after the verifier, and every saved run
+  stores the verdicts, so the new rule was applied to all saved C and D runs. Test: C 0.573 → 0.570 (3 escalations,
+  1 score changed), D 0.572 → 0.561 (8 escalations, 1 score changed); dev unchanged. Deceptive suite: D's hijacks
+  2/30 → **1/30** (3 escalations, accuracy unchanged), C unchanged (0/30).
+- **Reading:** escalations mostly replace answers that were wrong anyway (7 of 8 for D, 2 of 3 for C); each setup
+  loses one correct answer. The benchmark counts "I don't know" as a miss, so its score drops a little; on call, a
+  hand-off beats a confident wrong answer, and one planted-evidence attack no longer gets through. Kept.
+- **Note:** the results of D21–D23 are the pre-change runs as recorded; this entry is the replayed effect. Runs from
+  now on use the new rule (new result folders must use a new `--tag`).

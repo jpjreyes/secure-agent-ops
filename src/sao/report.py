@@ -68,8 +68,11 @@ def build(values: dict, snapshot: Path, audit_path: Path | None = None, title: s
     lines = [f"# {title}: incident report", "",
              "_Generated from recorded facts only: telemetry, the team's state, the gateway audit log._", "",
              "## Summary", ""]
+    escalated = (values.get("final") or {}).get("escalate")
     if final:
         lines.append("**Root cause:** " + ", ".join(f"`{f['name']}`" for f in final))
+    elif escalated:
+        lines.append(f"**Escalated, no verified root cause:** {escalated}")
     if plan.get("actions"):
         lines.append(f"**Remediation proposed:** {plan.get('summary', '')[:400]}")
     elif plan:

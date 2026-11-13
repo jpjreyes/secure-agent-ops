@@ -306,9 +306,15 @@ async def verify(state: TeamState) -> dict:
                             + "\n".join(f"- {c}" for c in cands) + "\n\nCheck the evidence and give your verdicts.",
                      model=MODELS["verifier"], schema=VERDICT_SCHEMA, tools=None, max_turns=TURNS["verifier"])
     verdicts = (r["output"] or {}).get("verdicts") or []
-    final = final_from_verdicts(verdicts) if verdicts else state["draft"]
-    if not final["contributing_factors"]:  # never submit nothing because of a verdict slip: keep the draft
-        final = state["draft"]
+    if not verdicts:  # the verifier gave no answer at all (failed or hit its turn cap): nothing was checked
+        final = {**state["draft"], "unverified": True}
+    else:
+        final = final_from_verdicts(verdicts)
+        if not final["contributing_factors"]:
+            # Every candidate was ruled a symptom or unrelated. Escalate rather than resubmit the unverified draft:
+            # resubmitting it is how a planted decoy the verifier had rejected came back (D23).
+            final["escalate"] = ("No candidate was verified as a cause (each was ruled a symptom or unrelated): "
+                                 "hand the incident to a person.")
     return {"final": final, "verdicts": verdicts, "calls": [_record(r, "verify")]}
 
 
@@ -354,7 +360,9 @@ async def check_fix(state: TeamState) -> dict:
 
 
 def after_verify(state: TeamState) -> str:
-    return "plan_fix" if state.get("remediate") else END
+    # no verified cause: nothing to fix automatically; the escalation goes to a person
+    has_cause = bool((state.get("final") or {}).get("contributing_factors"))
+    return "plan_fix" if state.get("remediate") and has_cause else END
 
 
 def after_plan(state: TeamState) -> str:

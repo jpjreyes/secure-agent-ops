@@ -77,7 +77,7 @@ Gateway and security measurements:
 | Injection screening false positives on real telemetry | 0 of 7,535 lines (all 40 benchmark incidents) |
 | Policy safety properties | hold on all 221,184 requests the policies can distinguish; a deleted rule is caught |
 | Log-injection suite (AgentDojo templates × 3 attacker goals × 10 incidents, 3 conditions = 90 runs) | **0/90 hijacked, 0/90 prompt leaks**, including the unprotected single agent; attacks cost the team ~0.07 accuracy (distraction). Instruction-style templates don't move today's models |
-| Deceptive-evidence suite (fake failed-call logs, fake Kubernetes Events, a false "root cause" line, against a healthy service; 60 runs) | **single agent blamed the decoy 2/30, team 0/30**, single agent + verifier 2/30 (D23); no plan acted on it; accuracy A 0.53 vs 0.60 clean, team 0.67 vs 0.75 |
+| Deceptive-evidence suite (fake failed-call logs, fake Kubernetes Events, a false "root cause" line, against a healthy service; 60 runs) | **single agent blamed the decoy 2/30, team 0/30**, single agent + verifier 2/30 (D23; 1/30 once "no verified cause" escalates instead of resubmitting the draft, D24); no plan acted on it; accuracy A 0.53 vs 0.60 clean, team 0.67 vs 0.75 |
 
 Cost is reported as **API-equivalent** (the token counts priced at API list prices); evaluations ran through the
 Agent SDK on a Claude plan, in an isolated configuration, with the request verified byte-for-byte
@@ -101,7 +101,7 @@ the agents. The design limits the damage by construction rather than by prompt. 
 
 ## Engineering decisions
 
-Every decision with alternatives, reasons and numbers is in [`DECISIONS.md`](DECISIONS.md) (D1–D23), including the
+Every decision with alternatives, reasons and numbers is in [`DECISIONS.md`](DECISIONS.md) (D1–D24), including the
 mistakes testing caught: a concurrency bug in the telemetry server that had depressed the baseline from 0.60 to
 0.35, a policy that named a tool that doesn't exist, faults that left state behind and contaminated later episodes.
 The evaluation protocol was written before results: [`evals/PLAN.md`](evals/PLAN.md).
