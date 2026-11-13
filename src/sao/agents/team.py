@@ -47,6 +47,10 @@ SIGNAL_TOOLS = {
 MODELS = {"commander": "sonnet", "investigator": "haiku", "verifier": "sonnet", "executor": "sonnet"}
 TURNS = {"commander_plan": 8, "investigator": 25, "commander_synthesize": 4, "verifier": 30, "executor": 15}
 CHECK_SETTLE_S = 180
+# Setup D (evals/PLAN.md "Setup D"): the setup-A agent unchanged (same prompt, model, tools, turn cap) as the doer,
+# then the setup-C verifier unchanged. Kept apart from MODELS/TURNS so the pinned configurations of B and C stay valid.
+SOLO = {"model": "sonnet", "max_turns": 100}
+SOLO_PROMPT = "Investigate the incident and give the JSON diagnosis."
 
 
 class NodeStop(Exception):
@@ -233,6 +237,22 @@ async def _agent(node: str, **kw) -> dict:
         _inflight -= 1
 
 
+async def solo(state: TeamState) -> dict:
+    """Setup D's doer: exactly the setup-A agent (TASK prompt, every read-only tool), recorded as a team step so the
+    verifier and the checkpointer work unchanged. Its own reasoning and evidence go to the verifier in the draft."""
+    r = await _agent("solo", role="solo", system=TASK, snapshot=Path(state["snapshot"]), prompt=SOLO_PROMPT,
+                     model=SOLO["model"], schema=DIAGNOSIS_SCHEMA, tools=None, max_turns=SOLO["max_turns"])
+    draft = r["output"] or {"contributing_factors": []}
+    return {"draft": draft,
+            "plan": {"alert_summary": "(setup D: one agent investigated every signal; its diagnosis, with its "
+                                      "evidence, is the draft below)", "assignments": []},
+            "findings": [], "calls": [_record(r, "solo")]}
+
+
+def start(state: TeamState) -> str:
+    return "solo" if state.get("setup") == "D" else "commander_plan"
+
+
 async def commander_plan(state: TeamState) -> dict:
     r = await _agent("commander_plan", role="commander", system=COMMANDER_PLAN, snapshot=Path(state["snapshot"]),
                      prompt="Read the overview and alerts, then give the plan.", model=MODELS["commander"],
@@ -351,6 +371,7 @@ def after_synthesis(state: TeamState) -> str:
 
 def build() -> StateGraph:
     g = StateGraph(TeamState)
+    g.add_node("solo", solo)
     g.add_node("commander_plan", commander_plan)
     g.add_node("investigate", investigate)
     g.add_node("commander_synthesize", commander_synthesize)
@@ -359,7 +380,8 @@ def build() -> StateGraph:
     g.add_node("approve", approve)
     g.add_node("execute_fix", execute_fix)
     g.add_node("check_fix", check_fix)
-    g.add_edge(START, "commander_plan")
+    g.add_conditional_edges(START, start, ["solo", "commander_plan"])
+    g.add_edge("solo", "verify")
     g.add_conditional_edges("commander_plan", fan_out, ["investigate"])
     g.add_edge("investigate", "commander_synthesize")
     g.add_conditional_edges("commander_synthesize", after_synthesis, ["verify", END])
@@ -393,7 +415,7 @@ async def diagnose(snapshot: Path, setup: str, thread_id: str, checkpointer) -> 
 def team_result(values: dict, setup: str = "C") -> dict:
     """The episode's result from the graph state (same shape as setup A, plus per-agent calls)."""
     calls = values.get("calls", [])
-    answer = values.get("final") if setup == "C" else values.get("draft")
+    answer = values.get("final") if setup in ("C", "D") else values.get("draft")
     return {"factors": (answer or {}).get("contributing_factors", []), "is_error": answer is None,
             "draft": values.get("draft"), "verdicts": values.get("verdicts"), "plan": values.get("plan"),
             "findings": values.get("findings"), "calls": calls, "turns": sum(c["turns"] or 0 for c in calls),

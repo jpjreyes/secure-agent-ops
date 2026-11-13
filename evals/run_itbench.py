@@ -120,7 +120,7 @@ def _truth(sid: str) -> Truth:
 
 async def run_all(a, todo: list[tuple[str, int]], out_dir: Path) -> int:
     cp_ctx = None
-    if a.setup in ("B", "C"):
+    if a.setup in ("B", "C", "D"):
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
         from sao.agents import team
@@ -168,7 +168,7 @@ async def run_all(a, todo: list[tuple[str, int]], out_dir: Path) -> int:
             sc = score(_truth(sid), [f["name"] for f in r["factors"]])
             r.update(scenario=sid, rep=k, setup=a.setup, score=sc.score, recall_ok=sc.recall_ok, tp=sc.tp, fp=sc.fp,
                      missed=sc.missed)
-            if a.setup == "C" and r.get("draft") is not None:  # what the draft scored: the verifier's effect
+            if a.setup in ("C", "D") and r.get("draft") is not None:  # what the draft scored: the verifier's effect
                 r["draft_score"] = score(_truth(sid), [f["name"] for f in r["draft"].get("contributing_factors",
                                                                                           [])]).score
             d = out_dir / sid
@@ -195,7 +195,7 @@ async def run_all(a, todo: list[tuple[str, int]], out_dir: Path) -> int:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--setup", default="A", choices=["A", "B", "C"])
+    ap.add_argument("--setup", default="A", choices=["A", "B", "C", "D"])
     ap.add_argument("--split", choices=["dev", "test", "live", "live-hard"],
                     help="live = recorded live episodes with symptoms (runs/live), results under runs/itbench/live-*")
     ap.add_argument("--ids", nargs="*")
@@ -223,8 +223,14 @@ def main() -> None:
         out_dir = RUNS / f"{a.split + '-' if live else ''}A-{a.model}{'' if a.tag == 'v1' else '-' + a.tag}"
     else:
         out_dir = RUNS / f"{a.split + '-' if live else ''}{a.setup}-{a.tag}"
-        pin_config(out_dir, {"setup": a.setup, "via_gateway": a.via_gateway or a.remediate,
-                             "remediate": a.remediate, **team_config()})
+        cfg = {"setup": a.setup, "via_gateway": a.via_gateway or a.remediate, "remediate": a.remediate,
+               **team_config()}
+        if a.setup == "D":
+            from sao.agents import team
+            from sao.agents.prompts import TASK
+            sha = hashlib.sha256((TASK + team.SOLO_PROMPT).encode()).hexdigest()[:12]
+            cfg["solo"] = team.SOLO | {"prompt_sha": sha}
+        pin_config(out_dir, cfg)
     jobs = [(sid, k) for sid in ids for k in range(1, a.repeats + 1)]
     todo = [(s, k) for s, k in jobs if not (out_dir / s / f"rep{k}.json").exists()]
     print(f"{len(todo)} runs to do ({len(jobs) - len(todo)} already done) → {out_dir.relative_to(ROOT)}", flush=True)

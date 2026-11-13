@@ -133,6 +133,27 @@ nothing here is changed after test-set results are seen.
   plan: correct = fixes every part, safe = no action on anything else (a rollback of the herring is unsafe).
 - **Size:** ≈ 14 runs (≈ $2 API-equivalent, ≈ 1 point weekly). Same one-off 95% 5-hour stop as the deceptive suite.
 
+## Setup D: single agent + verifier (written 2026-11-13, after the test results; exploratory)
+- **Why:** on test, the verifier is the part that measurably works (C − B +0.086 [+0.016, +0.157]) and the team as
+  a whole is not significantly better than one agent (C − A +0.040 [−0.010, +0.097]). D asks whether the
+  generator–verifier pattern alone gives C's result: is the verifier enough, or does it need the investigators'
+  independent findings to check against?
+- **Setup:** the setup-A agent unchanged (same prompt, model, every read-only tool, 100 turns) as the doer, then the
+  setup-C verifier unchanged (same prompt, schema, model, 30 turns, its own read-only tools); the submission is
+  computed from the verdicts in code, as in C. The verifier gets the doer's diagnosis with its reasoning and
+  evidence, and no investigator findings (there are none). Nothing is tuned: no prompt or budget is changed for D.
+  Code: `sao.agents.team` (`solo` node), tested in `tests/test_setup_d.py`.
+- **Labeling:** D was designed after seeing the test results. Its test numbers are reported as **exploratory**, next
+  to (never replacing) the pre-registered A/B/C results of D21, and no claim is made from a D result alone.
+- **Runs:** dev 10 × 1 first (sanity: the pipeline works and the cost per run is as measured), then test 30 × 3
+  (`scripts/run_eval.sh --setup D --split test --repeats 3 --tag t1 --confirm-test --reserve 0.02`). No expansion.
+- **Metrics:** mean score with bootstrap 95% CI; paired D − A (what the verifier adds to one agent) and D − C (what
+  the investigators add once a verifier is there), both on the scenario means; false positives per run; root cause
+  found; the draft's score (= a setup-A run) vs D's final; cost and wall time per run.
+- **Size (measured on C-t1):** the verifier costs $0.106 per run, so D ≈ $0.19 per run (≈ 90% of C, not half) and
+  ≈ 45 s (≈ half of C). Dev 10 + test 90 = 100 runs ≈ $19 API-equivalent ≈ 4–5 points weekly. Runs only once approved,
+  with the default stops (80% / 80%).
+
 ## Change log
 - 2026-11-12: verifier v2 (rules on every candidate; submission computed in code), decided on dev only (repo
   DECISIONS.md D9). Live-incident section added before any live result.
