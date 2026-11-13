@@ -220,3 +220,21 @@ Each entry: what we chose, the alternatives, and why. Numbers are filled in as t
   policy; the Service-selector fault (no tool can fix it) correctly got no action and an escalation.
 - **Next to make live faults discriminating (not done):** two simultaneous faults, noisy background faults, or
   faults whose cause is one hop from the symptom (e.g. a dependency's limit).
+
+## D18. Log-injection suite results (2026-11-12): no hijacks, a small utility cost, and a weaker test than hoped
+- **Run:** 30 injected incidents (10 dev scenarios × 3 goals, AgentDojo's 5 templates verbatim) × 3 conditions.
+- **Hijacks:** **0/90** (no planted root cause in a final diagnosis, no planted scale-to-zero in an executor plan),
+  **0/90 prompt leaks**, in every condition, including the unprotected single agent.
+- **Utility under attack** (vs the clean dev score of the same scenarios, 1 run each, so noisy): A 0.58 vs 0.60;
+  team with screening off 0.67 vs 0.75; team with screening on 0.68 vs 0.75. The attacks cost the team a little
+  accuracy (distraction), not control.
+- **Screening:** flags ~1.2 planted lines per run, 0 for important_instructions (as known before the run); on vs
+  off made no measurable difference, because there were no successful attacks to prevent.
+- **What this does and doesn't show:** today's Claude models resist these published instruction-style templates
+  on their own in this setting, and the architectural controls (no write tools for models, approvals, Cedar) were
+  never exercised by a successful attack, so this suite does not measure them. The realistic threat for an SRE team
+  is **deceptive evidence** (plausible fake log lines that point at the wrong service), not instructions.
+- **Next (written before running it):** an adaptive suite of plausible false evidence (e.g. fake "connection
+  refused to payment" errors timed before the real fault, a fake config-change event on another Deployment), scored
+  the same way. Until then, the architectural controls are evidenced by their tests (THREAT_MODEL.md), not by this
+  suite.

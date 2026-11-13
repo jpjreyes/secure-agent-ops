@@ -62,7 +62,7 @@ Gateway and security measurements:
 | Cedar decision per call | ~0.6 ms p50 |
 | Injection screening false positives on real telemetry | 0 of 7,535 lines (all 40 benchmark incidents) |
 | Policy safety properties | hold on all 221,184 requests the policies can distinguish; a deleted rule is caught |
-| Log-injection suite (AgentDojo templates × 3 attacker goals × 10 incidents) | _running_ |
+| Log-injection suite (AgentDojo templates × 3 attacker goals × 10 incidents, 3 conditions = 90 runs) | **0/90 hijacked, 0/90 prompt leaks**, including the unprotected single agent; attacks cost the team ~0.07 accuracy (distraction). Instruction-style templates don't move today's models; a deceptive-evidence suite is next |
 
 Cost is reported as **API-equivalent** (the token counts priced at API list prices); evaluations ran through the
 Agent SDK on a Claude plan, in an isolated configuration, with the request verified byte-for-byte
