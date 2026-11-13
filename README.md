@@ -58,6 +58,10 @@ More agents don't find more root causes (~58% for every setup); checking each su
 what makes the answer cleaner. Dev (10 scenarios × 1) had overstated the gap: that's what the held-out split is for
 (DECISIONS.md D21).
 
+A follow-up (exploratory, D22): **one agent + the same verifier** scores 0.572, identical to the full team (0.573),
+at **73% of the cost and 44% of the time** ($0.15, 38 s). The pattern that pays off is generator + independent
+verifier; parallel investigators add nothing at this incident size.
+
 The single live faults are clean, with an obvious change: both setups hit the ceiling there, and the team
 costs ~4× more for the same diagnosis. On the harder episodes both drop to 0.64 the same way (they stop at the first
 clear cause and miss a second fault). The team's value on them is the verified, approved remediation; the harder
@@ -96,7 +100,7 @@ the agents. The design limits the damage by construction rather than by prompt. 
 
 ## Engineering decisions
 
-Every decision with alternatives, reasons and numbers is in [`DECISIONS.md`](DECISIONS.md) (D1–D21), including the
+Every decision with alternatives, reasons and numbers is in [`DECISIONS.md`](DECISIONS.md) (D1–D22), including the
 mistakes testing caught: a concurrency bug in the telemetry server that had depressed the baseline from 0.60 to
 0.35, a policy that named a tool that doesn't exist, faults that left state behind and contaminated later episodes.
 The evaluation protocol was written before results: [`evals/PLAN.md`](evals/PLAN.md).

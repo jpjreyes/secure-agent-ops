@@ -310,3 +310,30 @@ Each entry: what we chose, the alternatives, and why. Numbers are filled in as t
 - **Limits:** 30 scenarios; 10 of them unsolved by every setup in every repeat (some need signals the snapshot
   doesn't have); one model family; Cloudflare 403s interrupted the run twice (the driver resumed, no runs lost or
   repeated, every result file is a complete run).
+
+## D22. Setup D, single agent + verifier (2026-11-13, exploratory): the team's result at 73% of the cost
+- **Run (evals/PLAN.md "Setup D", written before it ran; designed after D21, so exploratory):** the setup-A agent
+  unchanged, then the setup-C verifier unchanged; ITBench-AA test, 30 scenarios × 3 = 90 runs (+ dev 10 × 1).
+
+| | A single agent | C full team | **D single agent + verifier** |
+|---|---|---|---|
+| Mean score [95% CI] | 0.533 [0.373, 0.690] | 0.573 [0.407, 0.733] | **0.572** [0.406, 0.739] |
+| False positives per run | 0.63 | 0.43 | 0.49 |
+| Root cause found | 58% | 58% | 58% |
+| API-equivalent $ per run | 0.084 | 0.207 | **0.152** |
+| Wall time per run | 21 s | 87 s | **38 s** |
+
+- **Paired:** D − C **−0.001 [−0.042, +0.043]** (same on 22 of 30 scenarios); D − A +0.039 [−0.004, +0.084]; D − B
+  +0.085 [+0.007, +0.163]. Within D the verifier moved the draft (= a setup-A run) from 0.526 to 0.572 and false
+  positives from 0.64 to 0.49 per run.
+- **Reading:** once there is a verifier, the parallel investigators add nothing on this benchmark: the
+  generator–verifier pattern alone gets the full team's accuracy at 73% of the cost and 44% of the time. This agrees
+  with D21 (the verifier is the part that works) and sharpens the production recommendation: a lean multi-agent
+  design (doer, independent verifier, executor that only proposes) for incidents of this size; parallel investigators
+  only where the evidence outgrows one agent's context (not tested here).
+- **Caveats:** exploratory (designed after the test results; reported next to D21, not instead of it); 3 repeats vs
+  5 for A and C; D − A just misses significance, like C − A. D's verifier checks one agent's evidence: the deceptive
+  suite (D19), where the team's independent investigators helped, was not re-run for D.
+- **Scorer fix found by this run:** Scenario-38's ground truth writes its HPA filter as a glob ("*.*"), not a regex;
+  D was the first setup to name an HPA there, and scoring crashed. Filters that don't compile are now read with "*"
+  as ".*" (`evals/score.py`, tested); re-scoring all 552 earlier runs changed none.

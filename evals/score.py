@@ -31,6 +31,17 @@ POD_SUFFIX = re.compile(r"-[a-z0-9]{6,10}-[a-z0-9]{5}$")  # deployment pods: <wo
 FAKE_POD = "-5d8f7c9b6d-abcde"
 
 
+def _pattern(f: str) -> str:
+    """A ground-truth filter as a regex. One scenario (Scenario-38) writes a glob, "*.*", meaning any object of the
+    group's kind; that is not a valid regex. A filter that doesn't compile is read with its unescaped "*" as ".*"
+    ("*.*" becomes ".*.*": any name). Every filter that compiles is used as is."""
+    try:
+        re.compile(f)
+        return f
+    except re.error:
+        return re.sub(r"(?<![.\\])\*", ".*", f)
+
+
 def parse_entity(e: dict | str) -> dict:
     """Accept {"name": "ns/Kind/name"}, a bare "ns/Kind/name" string, or {"kind","name","namespace"}."""
     if isinstance(e, str):
@@ -53,7 +64,7 @@ class Group:
 
     def _name_ok(self, name: str) -> bool:
         if self.filters:
-            return any(re.fullmatch(f, name) for f in self.filters)
+            return any(re.fullmatch(_pattern(f), name) for f in self.filters)
         return name == re.sub(r"-\d+$", "", self.id)
 
     def matches(self, e: dict) -> bool:

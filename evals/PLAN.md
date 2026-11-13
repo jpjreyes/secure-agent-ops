@@ -166,3 +166,6 @@ nothing here is changed after test-set results are seen.
   repeats (step 2: the paired A-vs-C interval after 3 repeats was +0.028 [−0.022, +0.083]); dev × 3 for the
   secondary all-40 figure (step 4). The weekly usage stop was raised to 90% for this one night; nothing in the
   scoring or the protocol changed.
+- 2026-11-13: setup D run (D22): dev 10 × 1, test 30 × 3. Scoring crashed on Scenario-38's glob-style filter
+  ("*.*"); fixed in `evals/score.py` (filters that don't compile read "*" as ".*"), all 552 earlier runs re-scored
+  unchanged, D resumed with no run lost.

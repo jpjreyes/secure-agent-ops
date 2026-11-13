@@ -96,3 +96,16 @@ def test_wrong_namespace_misses_and_empty_is_zero():
 def test_spawned_chaos_object_matches_its_schedule_group():
     assert s(NETWORK, "chaos-mesh/NetworkChaos/otel-demo-checkout-kafka-network-partition-rjhbq").score == 1.0
     assert s(NETWORK, "chaos-mesh/NetworkChaos/otel-demo-checkout-kafka-network-partition-rjhbqx").score == 0.0
+
+
+def test_glob_style_filter_in_ground_truth_matches_any_name():
+    # Scenario-38 writes "*.*" (any HorizontalPodAutoscaler); it is not a valid regex and must not crash scoring
+    t = Truth.from_yaml("""
+groups:
+  - id: hpas
+    kind: HorizontalPodAutoscaler
+    namespace: otel-demo
+    filter: ["*.*"]
+    root_cause: true
+""")
+    assert score(t, ["otel-demo/HorizontalPodAutoscaler/ad"]).score == 1.0
