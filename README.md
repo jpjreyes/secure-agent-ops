@@ -6,6 +6,10 @@ arguments, human approval bound to the exact calls, injection screening of telem
 and a kill switch. The model never holds a write credential: it proposes a fix, a person approves the exact calls,
 code executes them.
 
+**Live demo: [secure-agent-ops.vercel.app](https://secure-agent-ops.vercel.app)**: plant an attack in a real
+incident's logs, watch the team investigate through the gateway on AWS, kill the run, try to push a fix through
+without a valid signature, and tamper with the audit log.
+
 Measured on **ITBench-AA** (IBM's SRE root-cause benchmark, with a held-out test split), on **19 faults injected
 into a live OpenTelemetry Demo cluster**, and on a **log-injection attack suite** built from AgentDojo's templates.
 
@@ -99,9 +103,27 @@ the agents. The design limits the damage by construction rather than by prompt. 
 | Accountability | hash-chained audit log of every call and denial (edits detected); OpenTelemetry trace per incident |
 | Stop it now | kill switch per agent, token or tool, checked on every request |
 
+## Deployment
+
+The public demo runs the same team, gateway, policies and audit chain on AWS (Terraform in
+[`infra/aws/`](infra/aws/), `scripts/aws_deploy.sh`; D25–D27):
+
+- **One image, two Lambda functions.** The API (Function URL, SnapStart: first request after a deploy 0.7 s, then
+  ~30 ms) creates runs, serves their progress, the per-run kill switch and the audit check. The worker plants the
+  visitor's text in a recorded ITBench-AA incident and runs the team with the gateway in the same container.
+- **Identity:** the issuer signs agent tokens with an AWS KMS key (ECC P-256); the private key never leaves KMS.
+- **State:** rate limits and kill switches in DynamoDB, run documents in S3, each run's final audit log in an S3
+  bucket with Object Lock in compliance mode. Least-privilege role per function; the model API key lives in SSM
+  and is read at start-up, never by Terraform.
+- **Writes** go to a simulated cluster on the demo (the "push it through" panel sends real calls through the
+  gateway's identity, Cedar and signature checks); real execution happens only against the local cluster.
+- **Parity:** 5 dev incidents through the deployed worker scored exactly as in the evaluation (5/5, mean 0.70 =
+  0.70), every audit chain intact (D26). Live runs are capped per hour and per day; a run costs ~$0.20 in model
+  calls and ~$0.006 in compute.
+
 ## Engineering decisions
 
-Every decision with alternatives, reasons and numbers is in [`DECISIONS.md`](DECISIONS.md) (D1–D24), including the
+Every decision with alternatives, reasons and numbers is in [`DECISIONS.md`](DECISIONS.md) (D1–D27), including the
 mistakes testing caught: a concurrency bug in the telemetry server that had depressed the baseline from 0.60 to
 0.35, a policy that named a tool that doesn't exist, faults that left state behind and contaminated later episodes.
 The evaluation protocol was written before results: [`evals/PLAN.md`](evals/PLAN.md).
@@ -115,7 +137,10 @@ scripts/dev_db.sh up                  # Postgres for the checkpointer
 uv run python -m sao.faults list      # 19 faults; inject / status / revert
 uv run python -m sao.faults.episode flag-payment-failure   # record a live incident
 uv run python -m sao.incident runs/live/<episode> --dry-run # team + terminal approval + execution (server dry run)
-uv run pytest -q                      # 113 tests; CI runs the ones that need no cluster or local data
+uv run pytest -q                      # CI runs the tests that need no cluster or local data
 ```
+
+Demo, locally: `uv run uvicorn sao.demo.app:app --port 8081` (runs in a thread, state in `/tmp/sao-demo`) and
+`cd web && npm run dev`. On AWS: `scripts/aws_deploy.sh` (builds, pushes, applies; image tag = commit).
 
 Evaluations: `evals/run_itbench.py` (A/B/C, stop-safe, resumable), `evals/run_injection.py`, `evals/compare.py`.
