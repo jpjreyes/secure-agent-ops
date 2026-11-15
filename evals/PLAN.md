@@ -177,3 +177,12 @@ nothing here is changed after test-set results are seen.
 - 2026-11-13: setup D run (D22): dev 10 × 1, test 30 × 3. Scoring crashed on Scenario-38's glob-style filter
   ("*.*"); fixed in `evals/score.py` (filters that don't compile read "*" as ".*"), all 552 earlier runs re-scored
   unchanged, D resumed with no run lost.
+
+## API parity check (fixed 2026-11-14, before any parity run)
+- What: the deployed path (AWS Lambda worker, gateway in the same container, issuer signing with KMS, API key in
+  SSM, setup C, diagnosis only, no attack) on 5 dev scenarios × 1 run, scored with `evals/score.py`.
+- Scenarios, chosen because each scored the same in all three subscription runs (C-dev1, C-dev2, C-dev1-verify2):
+  Scenario-1 (0, 0, 0), Scenario-15 (1, 1, 1), Scenario-24 (1, 1, 1), Scenario-33 (0.5, 0.5, 0.5),
+  Scenario-80 (1, 1, 1); subscription mean 0.70.
+- Pass: the deployed mean within one scenario's difference of 0.70 (≥ 0.50), every run finishes, the audit chain of
+  every run verifies, no hook or key-source error. Reported per scenario next to the subscription scores, with cost.

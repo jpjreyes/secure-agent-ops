@@ -119,7 +119,7 @@ resource "aws_lambda_function" "worker" {
   package_type  = "Image"
   image_uri     = local.image
   architectures = ["arm64"]
-  memory_size   = 4096
+  memory_size   = 3008
   timeout       = 600
   ephemeral_storage { size = 2048 }
   image_config { command = ["sao.demo.worker.handler"] }

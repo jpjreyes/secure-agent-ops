@@ -108,21 +108,27 @@ class Flusher:
         self.flush()
 
 
-async def run(run_id: str, incident: str, preset: str | None, custom: str | None) -> dict:
+async def run(run_id: str, incident: str, preset: str | None, custom: str | None, clean: bool = False) -> dict:
+    """`clean`: no attack and no remediation, the evals' diagnosis setting (the API parity check only; the public
+    API never sets it, it is reachable by invoking the function directly, which needs IAM rights)."""
     from langgraph.checkpoint.memory import InMemorySaver
     from langgraph.types import Command
 
     from sao.agents import sdk, team
     from sao.gateway.local import running_gateway
 
-    text, goal = attack.attack_text(preset, custom)
     doc = store.get_run(run_id) or {}
-    doc |= {"id": run_id, "incident": incident, "incident_info": INCIDENTS[incident], "truth": truth(incident),
-            "attack": {"preset": preset if goal != "custom" else None, "goal": goal, "text": text},
+    doc |= {"id": run_id, "incident": incident, "incident_info": INCIDENTS.get(incident), "truth": truth(incident),
             "status": "running", "phase": "planting", "started": time.time(), "steps": []}
     work = WORK / run_id
-    snap = work / "snapshot"
-    doc["attack"] |= attack.plant(SNAPS / incident, snap, text)
+    if clean:
+        text, goal, snap = "", "none", SNAPS / incident
+        doc["attack"] = None
+    else:
+        text, goal = attack.attack_text(preset, custom)
+        doc["attack"] = {"preset": preset if goal != "custom" else None, "goal": goal, "text": text}
+        snap = work / "snapshot"
+        doc["attack"] |= attack.plant(SNAPS / incident, snap, text)
     audit_dir = work / "gateway"
     ks = store.RunKillSwitch(run_id)
     with Flusher(run_id, doc, audit_dir / "audit.jsonl") as fl:
@@ -131,7 +137,7 @@ async def run(run_id: str, incident: str, preset: str | None, custom: str | None
                 sdk.GATEWAY = gw
                 graph = team.build().compile(checkpointer=InMemorySaver())
                 config = {"configurable": {"thread_id": run_id}}
-                inp = {"snapshot": str(snap), "setup": "C", "remediate": True, "incident_alerts": []}
+                inp = {"snapshot": str(snap), "setup": "C", "remediate": not clean, "incident_alerts": []}
                 doc["phase"] = "investigating"
                 values: dict = {}
                 while True:
@@ -160,7 +166,8 @@ async def run(run_id: str, incident: str, preset: str | None, custom: str | None
             doc["result"] = {"factors": res["factors"], "escalate": (values.get("final") or {}).get("escalate"),
                              "fix_plan": values.get("fix_plan"), "cost": res["cost_usd_api_equivalent"],
                              "agent_wall_s": res["wall_s"],
-                             "hijacked": attack.hijacked(goal, res["factors"], values.get("fix_plan"), out_text)}
+                             "hijacked": None if clean else attack.hijacked(goal, res["factors"],
+                                                                            values.get("fix_plan"), out_text)}
             at = store.killed_at(run_id)
             if at is not None:
                 after = [r for r in fl.audit() if r.get("ts", 0) >= at]
@@ -200,7 +207,8 @@ def _load_key() -> None:
 def handler(event, _context=None):
     """Lambda entry point (invoked asynchronously by the API)."""
     _load_key()
-    return asyncio.run(run(event["run_id"], event["incident"], event.get("preset"), event.get("custom")))["status"]
+    return asyncio.run(run(event["run_id"], event["incident"], event.get("preset"), event.get("custom"),
+                           clean=bool(event.get("clean"))))["status"]
 
 
 if __name__ == "__main__":

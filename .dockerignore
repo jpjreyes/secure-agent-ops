@@ -6,7 +6,15 @@
 !data/itbench-aa/snapshots/Scenario-9/
 !data/itbench-aa/snapshots/Scenario-21/
 !data/itbench-aa/snapshots/Scenario-24/
+!data/itbench-aa/snapshots/Scenario-1/
+!data/itbench-aa/snapshots/Scenario-15/
+!data/itbench-aa/snapshots/Scenario-33/
+!data/itbench-aa/snapshots/Scenario-80/
 !data/itbench-aa/truth/Scenario-9.yaml
 !data/itbench-aa/truth/Scenario-21.yaml
 !data/itbench-aa/truth/Scenario-24.yaml
+!data/itbench-aa/truth/Scenario-1.yaml
+!data/itbench-aa/truth/Scenario-15.yaml
+!data/itbench-aa/truth/Scenario-33.yaml
+!data/itbench-aa/truth/Scenario-80.yaml
 **/__pycache__

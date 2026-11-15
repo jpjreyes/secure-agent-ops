@@ -12,12 +12,10 @@ COPY policies/ ${LAMBDA_TASK_ROOT}/policies/
 COPY infra/identity/registry.yaml ${LAMBDA_TASK_ROOT}/infra/identity/registry.yaml
 RUN echo "${LAMBDA_TASK_ROOT}/src" > /var/lang/lib/python3.12/site-packages/sao.pth
 
-# The recorded incidents the demo offers (ITBench-AA dev scenarios) and their ground truth.
-COPY data/itbench-aa/snapshots/Scenario-9/  ${LAMBDA_TASK_ROOT}/data/itbench-aa/snapshots/Scenario-9/
-COPY data/itbench-aa/snapshots/Scenario-21/ ${LAMBDA_TASK_ROOT}/data/itbench-aa/snapshots/Scenario-21/
-COPY data/itbench-aa/snapshots/Scenario-24/ ${LAMBDA_TASK_ROOT}/data/itbench-aa/snapshots/Scenario-24/
-COPY data/itbench-aa/truth/Scenario-9.yaml data/itbench-aa/truth/Scenario-21.yaml \
-     data/itbench-aa/truth/Scenario-24.yaml ${LAMBDA_TASK_ROOT}/data/itbench-aa/truth/
+# The recorded incidents: three offered on the page (Scenario-9, -21, -24) plus four more dev scenarios for the
+# API parity check (D26). Which ones get in is set by .dockerignore.
+COPY data/itbench-aa/snapshots/ ${LAMBDA_TASK_ROOT}/data/itbench-aa/snapshots/
+COPY data/itbench-aa/truth/ ${LAMBDA_TASK_ROOT}/data/itbench-aa/truth/
 
 ENV SAO_IDENTITY_KEYS=/tmp/sao-identity \
     SAO_DEMO_WORK=/tmp/sao-work \
