@@ -94,7 +94,7 @@ export default function Home() {
       <Results />
 
       <footer className="mt-20 flex flex-wrap justify-between gap-3 border-t border-line pt-5 font-mono text-[11.5px] text-faint">
-        <span>Juan Pablo Reyes · Secure Agent Ops</span>
+        <span>Juan Pablo Jose Reyes Martinez · Secure Agent Ops</span>
         <span>
           Claude (Agent SDK) · LangGraph · MCP · Cedar · AWS Lambda, KMS, DynamoDB, S3 Object Lock ·{" "}
           <a href={REPO} className="underline-offset-2 hover:text-ink hover:underline">source</a>
