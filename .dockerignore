@@ -1,0 +1,12 @@
+*
+!requirements.lock
+!src/
+!policies/
+!infra/identity/registry.yaml
+!data/itbench-aa/snapshots/Scenario-9/
+!data/itbench-aa/snapshots/Scenario-21/
+!data/itbench-aa/snapshots/Scenario-24/
+!data/itbench-aa/truth/Scenario-9.yaml
+!data/itbench-aa/truth/Scenario-21.yaml
+!data/itbench-aa/truth/Scenario-24.yaml
+**/__pycache__

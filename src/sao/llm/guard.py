@@ -13,6 +13,11 @@ version uses an API key. The guarantees and the setup match the CLI backend used
      or CLAUDE_EVAL_STOP_AT_5H (default: the same) of the 5-hour window, the next run raises QuotaStop; paid extra
      usage (isUsingOverage) stops at once.
 
+API mode (SAO_LLM=api) exists for the deployed demo and the API parity check only: the key comes from the
+environment (on AWS, from SSM at start-up), the configuration folder is a fresh empty one, and a run stops unless the
+CLI reports apiKeySource == "ANTHROPIC_API_KEY". The usage guard does not apply there (the workspace has its own
+spend cap). Evals never set it.
+
 EvalStop derives from BaseException so task-level `except Exception` handlers can't swallow "stop the run".
 """
 
@@ -36,6 +41,8 @@ KNOWN_HOOKS = {
 }
 
 last_windows: dict | None = None
+API_MODE = os.environ.get("SAO_LLM") == "api"
+API_CONFIG = Path(os.environ.get("SAO_API_CONFIG_DIR", "/tmp/sao-claude-config"))
 
 
 class EvalStop(BaseException):
@@ -65,6 +72,8 @@ CAPTURE_URL: str | None = None  # set by evals/capture.py: a request-logging pro
 
 def sdk_env() -> dict[str, str]:
     """Environment for the SDK's CLI subprocess. Also scrubs API-key variables from this process."""
+    if API_MODE:
+        return _api_env()
     for k in REMOVE:
         os.environ.pop(k, None)
     extra = {}
@@ -82,6 +91,19 @@ def sdk_env() -> dict[str, str]:
     # the guard still checks that every PostToolUse hook returns empty output.
     return {"CLAUDE_CONFIG_DIR": str(CONFIG), "CLAUDE_CODE_OAUTH_TOKEN": tok,
             "CTX_REPLACE_TRIGGER_BYTES": str(10**12), **extra}
+
+
+def _api_env() -> dict[str, str]:
+    key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not key.startswith("sk-ant-") or key.startswith("sk-ant-oat"):  # an API key, not a CLI login token
+        raise NotClean("SAO_LLM=api needs ANTHROPIC_API_KEY")
+    for k in REMOVE:
+        if k != "ANTHROPIC_API_KEY":
+            os.environ.pop(k, None)
+    API_CONFIG.mkdir(parents=True, exist_ok=True)
+    return {"ANTHROPIC_API_KEY": key, "CLAUDE_CONFIG_DIR": str(API_CONFIG), "HOME": str(API_CONFIG.parent),
+            "DISABLE_AUTOUPDATER": "1", "DISABLE_TELEMETRY": "1", "DISABLE_ERROR_REPORTING": "1",
+            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"}
 
 
 def _util(w: dict | None) -> float:
@@ -117,6 +139,8 @@ def before_run(reserve: float = 0.0) -> None:
     """Refuse to start new work at the stop threshold. `reserve` (a fraction of the window) is the measured cost
     of the work about to start: an episode starts only if it can finish below the threshold, so stops land between
     episodes instead of cutting one off."""
+    if API_MODE:
+        return
     over = {k: (w.get("utilization") or 0.0) for k, w in (last_windows or {}).items()
             if (w.get("utilization") or 0.0) + reserve >= limit(k)}
     if over:
@@ -130,7 +154,8 @@ def check(msg) -> None:
     kind = type(msg).__name__
     if kind == "SystemMessage" and getattr(msg, "subtype", "") == "init":
         src = (msg.data or {}).get("apiKeySource")
-        if src != "none":
+        expected = "ANTHROPIC_API_KEY" if API_MODE else "none"
+        if src != expected:
             raise NotClean(f"not using the CLI login: apiKeySource={src!r}")
     elif kind == "HookEventMessage" or (
             kind == "SystemMessage" and str(getattr(msg, "subtype", "")).startswith("hook")):

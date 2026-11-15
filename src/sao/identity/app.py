@@ -21,7 +21,7 @@ from sao.identity.issuer import ASSERTION_TYPE, AT_TYPE, CC, TX, Client, Issuer,
 from sao.identity.keys import LocalSigner, Signer
 
 ROOT = Path(__file__).resolve().parents[3]
-KEYS = ROOT / "runs" / "identity" / "keys"
+KEYS = Path(os.environ.get("SAO_IDENTITY_KEYS", ROOT / "runs" / "identity" / "keys"))
 REGISTRY = ROOT / "infra" / "identity" / "registry.yaml"
 
 
@@ -63,6 +63,10 @@ def create_app(issuer: Issuer) -> Starlette:
 
 def local_issuer(url: str | None = None) -> Issuer:
     url = url or os.environ.get("SAO_ISSUER_URL", "http://127.0.0.1:18100")
+    kms = os.environ.get("SAO_KMS_KEY_ID")  # on AWS the issuer signs with a KMS key; the private half never leaves KMS
+    if kms:
+        from sao.identity.keys import KmsSigner
+        return Issuer(url, KmsSigner(kms), load_registry())
     return Issuer(url, LocalSigner.from_file(KEYS / "issuer.pem"), load_registry())
 
 
