@@ -141,7 +141,7 @@ export function Schematic({ doc, records, pulses, steps, onPulseDone }: {
           <path d={`M${AX + 52},${RES_Y} C${AX + 22},${RES_Y} ${AX + 30},${a.y} ${AX},${a.y}`} fill="none" stroke="var(--line)" />
         </g>
       ))}
-      <text x={36} y={54} className="tag fill-[var(--faint)]" fontSize={10}>AGENTS · OWN IDENTITY EACH</text>
+      <text x={36} y={54} className="tag fill-[var(--faint)]" fontSize={10}>AGENTS</text>
 
       {/* gateway frame */}
       <rect x={AX + 44} y={46} width={TOOL_X - AX - 88} height={290} fill="none" stroke="var(--line-strong)" strokeDasharray="5 4" />
@@ -156,7 +156,7 @@ export function Schematic({ doc, records, pulses, steps, onPulseDone }: {
       <Gate x={G_CEDAR} y={REQ_Y} label="Cedar policy" sub="rules on the arguments" tone={s.cedar.stop ? "stop" : s.cedar.pass ? "pass" : "idle"}
         n={`${s.cedar.pass} allowed${s.cedar.stop ? ` · ${s.cedar.stop} denied` : ""}`} />
       <Gate x={G_SCREEN} y={RES_Y} label="Screening" sub="telemetry marked untrusted" tone={s.screen.flagged ? "stop" : s.cedar.pass ? "pass" : "idle"}
-        n={s.screen.flagged ? `${s.screen.flagged} results flagged` : `${s.cedar.pass} results marked`} />
+        n={s.screen.flagged ? `${s.screen.flagged} result${s.screen.flagged === 1 ? "" : "s"} flagged` : `${s.cedar.pass} result${s.cedar.pass === 1 ? "" : "s"} marked`} />
 
       {/* tools */}
       <rect x={TOOL_X} y={REQ_Y - 46} width={150} height={RES_Y - REQ_Y + 92} fill="var(--panel)" stroke="var(--line-strong)" />
