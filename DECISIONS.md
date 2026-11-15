@@ -372,3 +372,17 @@ Each entry: what we chose, the alternatives, and why. Numbers are filled in as t
   hand-off beats a confident wrong answer, and one planted-evidence attack no longer gets through. Kept.
 - **Note:** the results of D21–D23 are the pre-change runs as recorded; this entry is the replayed effect. Runs from
   now on use the new rule (new result folders must use a new `--tag`).
+
+## D25. Public demo: "try to break it" (2026-11-14)
+- **Context:** the incident cluster runs on kind and stays local (cost). The public demo works on the recorded
+  ITBench-AA incidents (18–19 MB each, bundled in the image) through the real gateway on AWS.
+- **Chosen:** the visitor plays the attacker, not the user. (1) Plant an attack in a recorded incident's telemetry
+  (own log line or presets: instruction injection, planted root cause, secret request), then start a live team run;
+  (2) watch the agents and the gateway side by side: screened, Cedar deny (policy named), verifier rejection, or
+  "needs a person's signature"; (3) kill switch mid-run with the measured time-to-effect; (4) edit one audit record
+  in the browser and see the hash-chain check fail at that line. Default view: a replay of one recorded attack,
+  no model calls. Fixes stop at a signed-approval request; execution happens only on the local cluster.
+- **Rejected:** replay + gateway panel only (no live agents: weaker); a live "investigate" button (the same
+  interaction as an ordinary SRE-agent demo, and it shows the agent, not the security layer); terminal only.
+- **Limits:** demo API key in its own workspace with a $10 cap, live runs limited to 6 per hour, kill switch and
+  audit views need no model calls. Fallback if the agent runtime does not fit Lambda: parts 2–4 from replay.
