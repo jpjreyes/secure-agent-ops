@@ -409,3 +409,10 @@ Each entry: what we chose, the alternatives, and why. Numbers are filled in as t
   one. The page reports requests allowed after the kill (the number that matters, 0 in the local test), requests
   denied, and how long until an agent next tried (2.6 s in that test); the 16 ms of D14 is the propagation time
   measured on the local backend.
+
+## D27. Demo page look: a live schematic of the layers (2026-11-14)
+- Dark-first page built around one diagram: agents → [identity + kill switch → Cedar → tool → output screening] for
+  every tool call, then [verifier → a person's signature] for every decision. Each audit record moves through it;
+  a denied call stops at the gate that denied it, named. Audit tampering and the kill switch sit under the diagram.
+- Rejected: an ops "war room" dashboard (looks like every SRE tool, shows activity rather than the layers) and a
+  case-file look (gimmicky). The other projects' pages are light and editorial, so this one is deliberately not.
