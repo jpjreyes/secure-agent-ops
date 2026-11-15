@@ -386,3 +386,26 @@ Each entry: what we chose, the alternatives, and why. Numbers are filled in as t
   interaction as an ordinary SRE-agent demo, and it shows the agent, not the security layer); terminal only.
 - **Limits:** demo API key in its own workspace with a $10 cap, live runs limited to 6 per hour, kill switch and
   audit views need no model calls. Fallback if the agent runtime does not fit Lambda: parts 2–4 from replay.
+
+## D26. Deployed on AWS; API parity 5/5 (2026-11-14)
+- **What runs:** one image (AWS Lambda base image, Python 3.12, arm64), two functions. `sao-demo-api` (Function URL,
+  SnapStart on published versions, alias `live`): creates runs (6 per hour, 20 per day, counted in DynamoDB), serves
+  run documents, the per-run kill switch and the audit check. `sao-demo-worker` (3008 MB, 10 min, no retries):
+  plants the attack, runs setup C with the gateway in the same container, issuer signing agent tokens with a KMS key
+  (ECC_NIST_P256; the private key never leaves KMS), demo API key read from SSM at start-up. Run documents in S3;
+  each run's final audit log copied to a bucket with Object Lock in compliance mode (1-day retention for the demo).
+  Least-privilege roles per function. Terraform in `infra/aws/` (state in S3 with native locking);
+  `scripts/aws_deploy.sh` builds, pushes and applies, image tag = commit.
+- **Changed from D5:** Mangum instead of the Lambda Web Adapter. SnapStart on container images needs an AWS base image
+  and its runtime client, which Mangum fits directly. Measured: API first request after deploy 0.72 s (restore from
+  snapshot), then ~30 ms. The worker peaks at 1.9 GB (new accounts are capped at 3008 MB); compute ≈ $0.006 per run.
+- **Model access:** `SAO_LLM=api` (guard API mode) exists only here and in the parity check: the run must report
+  `apiKeySource == "ANTHROPIC_API_KEY"`, the configuration folder is fresh and empty. Evals still refuse any key.
+- **Parity (protocol fixed in PLAN.md before running):** 5 dev scenarios, clean (no attack, diagnosis only), through the
+  deployed worker. Scenario-1 0.00 / 0.00, Scenario-15 1.00 / 1.00, Scenario-24 1.00 / 1.00, Scenario-33 0.50 / 0.50,
+  Scenario-80 1.00 / 1.00 (deployed / subscription): **5/5 equal, mean 0.70 = 0.70**. Every audit chain verifies;
+  $0.70 in total, 52–119 s per run. Results: `runs/parity_api/`.
+- **Kill switch, as measured on the demo:** the switch is re-read on every request, so it takes effect on the next
+  one. The page reports requests allowed after the kill (the number that matters, 0 in the local test), requests
+  denied, and how long until an agent next tried (2.6 s in that test); the 16 ms of D14 is the propagation time
+  measured on the local backend.
