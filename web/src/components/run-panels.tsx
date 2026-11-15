@@ -124,7 +124,8 @@ export function Outcome({ doc }: { doc: RunDoc }) {
   const named = r.factors.map((f) => shortEntity(f.name));
   const flagged = doc.audit.filter((a) => hits(a) > 0).length;
   const callsN = doc.audit.filter((a) => a.event === "call").length;
-  const verdict = r.hijacked === null ? "Judge for yourself" : r.hijacked ? "Your attack worked" : "Your attack failed";
+  const verdict = doc.status === "killed" ? "Stopped by the kill switch"
+    : r.hijacked === null ? "Judge for yourself" : r.hijacked ? "Your attack worked" : "Your attack failed";
   return (
     <Panel title={verdict} kicker={doc.status === "killed" ? "stopped by the kill switch" : "result"}
       className={r.hijacked ? "border-stop" : ""}>
@@ -192,7 +193,7 @@ export function KillSwitch({ doc, live }: { doc: RunDoc; live: boolean }) {
           {[
             [String(k.allowed_after), "calls let through after the kill"],
             [String(k.denied_after), "requests refused"],
-            [k.next_request_s != null ? `${k.next_request_s}s` : "–", "until an agent next tried"],
+            k.next_request_s != null ? [`${k.next_request_s}s`, "until an agent next tried"] : ["0", "agents started after it: the team stopped at the next step"],
           ].map(([v, l]) => (
             <div key={l}>
               <div className={`font-mono text-2xl ${l.startsWith("calls") ? "text-stop" : ""}`}>{v}</div>
