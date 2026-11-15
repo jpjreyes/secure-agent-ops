@@ -77,3 +77,17 @@ def test_api_mode_refuses_a_login_token(monkeypatch):
         guard.sdk_env()
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-test")
     assert guard.sdk_env()["ANTHROPIC_API_KEY"] == "sk-ant-api03-test"
+
+
+@pytest.mark.skipif(not SNAP.exists(), reason="ITBench-AA snapshot not downloaded")
+def test_push_through_only_the_signed_call_passes():
+    import asyncio
+
+    from sao.demo import push
+    call = {"tool": "rollback_deployment", "args": {"namespace": "otel-demo", "name": "checkout",
+                                                     "idempotency_key": "test-push-0001"}}
+    got = {k: asyncio.run(push.attempt(k, call, "Scenario-24", "testrun01")) for k in push.ATTEMPTS}
+    assert {k: r["decision"] for k, r in got.items()} == {"investigator": "deny", "unsigned": "deny",
+                                                          "edited": "deny", "scale0": "deny", "signed": "allow"}
+    assert got["scale0"]["policies"] == ["no-scale-to-zero"]
+    assert got["signed"]["result"].startswith("simulated:")

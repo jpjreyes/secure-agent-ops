@@ -4,6 +4,7 @@ Each tool is annotated destructive (the gateway's Cedar policy then requires a h
 namespace and name explicitly (policies check them), and an idempotency key: a key that already ran returns the
 recorded result instead of acting again, so a crashed or resumed episode never applies an action twice.
 
+SAO_CLUSTER_SIMULATED=1 (the public demo, which has no cluster) records the call and changes nothing.
 SAO_DRY_RUN=1 sends every change with `--dry-run=server`: the API server validates it fully (admission, schema)
 without applying it. Results and keys are recorded in runs/actions/ledger.jsonl (append-only).
 
@@ -64,7 +65,10 @@ def _run(key: str, tool: str, args: dict, action) -> str:
             return f"refused: idempotency_key {key} was already used for a different action ({prev['tool']})"
         return f"already done (idempotency_key {key}): {prev['result']}"
     try:
-        result = action()
+        if os.environ.get("SAO_CLUSTER_SIMULATED") == "1":
+            result = f"simulated: {tool}({json.dumps(args, sort_keys=True)}) would run now; no cluster is attached"
+        else:
+            result = action()
         ok = True
     except kube.KubeError as e:
         result, ok = f"failed: {e}", False

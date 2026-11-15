@@ -41,6 +41,11 @@ data "aws_iam_policy_document" "api" {
     resources = [aws_s3_bucket.runs.arn]
   }
   statement {
+    sid       = "PushThroughSignsWithIssuer"
+    actions   = ["kms:Sign", "kms:GetPublicKey"]
+    resources = [aws_kms_key.issuer.arn]
+  }
+  statement {
     sid       = "StartRun"
     actions   = ["lambda:InvokeFunction"]
     resources = [aws_lambda_function.worker.arn]
@@ -147,12 +152,13 @@ resource "aws_lambda_function" "api" {
   image_uri     = local.image
   architectures = ["arm64"]
   memory_size   = 1024
-  timeout       = 20
+  timeout       = 30
   publish       = true
   snap_start { apply_on = "PublishedVersions" }
   environment {
     variables = merge(local.common_env, {
       SAO_WORKER_FUNCTION = aws_lambda_function.worker.function_name
+      SAO_KMS_KEY_ID      = aws_kms_key.issuer.arn
       SAO_WEB_ORIGINS     = join(",", var.web_origins)
       SAO_RUNS_PER_HOUR   = tostring(var.runs_per_hour)
       SAO_RUNS_PER_DAY    = tostring(var.runs_per_day)

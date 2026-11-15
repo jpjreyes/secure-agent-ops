@@ -5,6 +5,7 @@
   POST /api/runs                      {incident, preset | custom} → {id}; live team run, rate limited
   GET  /api/runs/{id}                 run document (steps, audit records, result), polled by the page
   POST /api/runs/{id}/kill            revoke every token of that run; the worker measures time to effect
+  POST /api/push                      {attempt, incident, call} → one write attempt through a fresh gateway
   POST /api/audit/verify              {records: [...]} → where the hash chain breaks (the gateway's own verifier)
 
 Locally: uv run uvicorn sao.demo.app:app --port 8081 (runs execute in a thread, state in /tmp/sao-demo).
@@ -109,6 +110,30 @@ async def kill_run(req: Request):
     return JSONResponse({"killed_at": at})
 
 
+CLUSTER_TOOLS = {"rollback_deployment", "restart_deployment", "scale_deployment", "set_flag", "delete_networkpolicy"}
+
+
+async def push(req: Request):
+    """The call comes from the page (a recorded or live run's proposal): it only ever reaches a simulated cluster,
+    through the real identity, Cedar and approval checks, so any call a visitor sends is safe to try."""
+    from sao.demo import push as push_mod
+    try:
+        body = await req.json()
+    except json.JSONDecodeError:
+        return JSONResponse({"error": "send JSON"}, status_code=400)
+    call, incident, kind = body.get("call") or {}, body.get("incident"), body.get("attempt")
+    args = call.get("args")
+    if (incident not in INCIDENTS or call.get("tool") not in CLUSTER_TOOLS or not isinstance(args, dict)
+            or len(json.dumps(args)) > 500 or kind not in push_mod.ATTEMPTS):
+        return JSONResponse({"error": "attempt, incident and a proposed cluster call are required"}, status_code=400)
+    rid = str(body.get("run_id") or "demo")[:40]
+    try:
+        out = await push_mod.attempt(kind, {"tool": call["tool"], "args": args}, incident, rid)
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"error": f"{type(e).__name__}: {str(e)[:200]}"}, status_code=500)
+    return JSONResponse(out)
+
+
 def verify_records(records: list[dict]) -> dict:
     """Run the gateway's own chain verifier (sao.gateway.audit.verify) on records sent by the page."""
     with tempfile.TemporaryDirectory() as d:
@@ -134,7 +159,7 @@ app = Starlette(
     routes=[Route("/api/health", health), Route("/api/incidents", incidents),
             Route("/api/runs", create_run, methods=["POST"]), Route("/api/runs/{rid}", get_run),
             Route("/api/runs/{rid}/kill", kill_run, methods=["POST"]),
-            Route("/api/audit/verify", verify, methods=["POST"])],
+            Route("/api/push", push, methods=["POST"]), Route("/api/audit/verify", verify, methods=["POST"])],
     # on AWS the Function URL adds the CORS headers (configured in Terraform); two sets of headers break browsers
     middleware=[] if WORKER else [Middleware(CORSMiddleware, allow_origins=ORIGINS, allow_methods=["GET", "POST"],
                                              allow_headers=["content-type"], max_age=600)])
