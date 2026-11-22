@@ -14,6 +14,7 @@ from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 
+from sao.faults.catalog import SYMPTOM_ALERTS
 from sao.telemetry.snapshot import Snapshot
 
 
@@ -33,7 +34,7 @@ def _first_alerts(snapshot: Path) -> list[tuple[str, str, str]]:
             continue
         for a in (d.get("data") or {}).get("alerts", []) if isinstance(d, dict) else d:
             lb = a.get("labels", {})
-            if a.get("state") != "firing" or lb.get("alertname") not in ("RequestErrorRate", "RequestLatency"):
+            if a.get("state") != "firing" or lb.get("alertname") not in SYMPTOM_ALERTS:
                 continue
             k = (lb["alertname"], lb.get("service_name", ""))
             if a.get("activeAt") and (k not in seen or a["activeAt"] < seen[k]):

@@ -25,7 +25,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from sao.faults import control
-from sao.faults.catalog import ALL_FAULTS, FAULTS, HARD
+from sao.faults.catalog import ALL_FAULTS, FAULTS, HARD, SYMPTOM_ALERTS
 
 ROOT = Path(__file__).resolve().parents[3]
 LIVE = ROOT / "runs" / "live"
@@ -65,7 +65,7 @@ def assess(snapshot: Path, injected_at: float, expected: list[str]) -> dict:
     series = _alerts_by_time(snapshot)
     before = set().union(*[a for t, a in series if t < injected_at]) if series else set()
     after = set().union(*[a for t, a in series if t >= injected_at]) if series else set()
-    new = {a for a in after - before if a[0] in ("RequestErrorRate", "RequestLatency")}
+    new = {a for a in after - before if a[0] in SYMPTOM_ALERTS}
     on_expected = sorted(a for a in new if a[1] in expected)
     # an app already failing before injection; flagd is excluded: on an idle cluster it logs a steady trickle of
     # stream-timeout errors (3.3 per 10 min measured, every other service at 0), i.e. background noise, not a fault
@@ -120,7 +120,7 @@ def record(fault_id: str, baseline_s: int = 120, after_s: int = 30, hold: bool =
         deadline, seen = time.time() + f.settle_s, set()
         while time.time() < deadline:
             time.sleep(15)
-            seen = {a for a in firing(snap) - baseline_alerts if a[0] in ("RequestErrorRate", "RequestLatency")}
+            seen = {a for a in firing(snap) - baseline_alerts if a[0] in SYMPTOM_ALERTS}
             print(f"  {int(time.time() - info['injected_at'])}s: new alerts {sorted(seen) or '-'}", flush=True)
             if seen and time.time() > info["injected_at"] + 90:  # let the picture develop a little
                 break

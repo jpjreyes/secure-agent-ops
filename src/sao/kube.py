@@ -61,6 +61,12 @@ def delete(kind: str, name: str, namespace: str = NAMESPACE) -> None:
     kubectl("delete", kind, name, "-n", namespace, "--ignore-not-found", "--wait=false")
 
 
+def delete_pods(deployment: str, namespace: str = NAMESPACE) -> None:
+    """Recreate a deployment's pods without touching its spec (no rollout, no Deployment diff)."""
+    labels = get("deployment", deployment, namespace)["spec"]["selector"]["matchLabels"]
+    kubectl("delete", "pods", "-n", namespace, "-l", ",".join(f"{k}={v}" for k, v in labels.items()), "--wait=false")
+
+
 def rollout_restart(deployment: str, namespace: str = NAMESPACE) -> None:
     kubectl("rollout", "restart", f"deployment/{deployment}", "-n", namespace)
 

@@ -77,6 +77,17 @@ prometheus:
               labels: {severity: warning, namespace: otel-demo}
               annotations:
                 description: "Latency in service {{ $labels.service_name }} in namespace otel-demo is above 1500ms (current: {{ $value }}ms)"
+            # Kafka consumers (fraud-detection, accounting) only emit consumer spans, which the two rules above never
+            # see, so a queue fault raised no alert (D16 addendum). Lag comes from the collector's kafkametrics
+            # receiver; the consumer group is the service. Threshold set from an idle baseline (max lag 1 over 10 min)
+            # before any fault was injected (D28).
+            - alert: KafkaConsumerLag
+              expr: |
+                label_replace(sum by (group) (kafka_consumer_group_lag_sum_ratio), "service_name", "$1", "group", "(.*)") > 50
+              for: 30s
+              labels: {severity: warning, namespace: otel-demo}
+              annotations:
+                description: "Kafka consumer lag for consumer group {{ $labels.service_name }} in namespace otel-demo is above 50 messages (current: {{ $value }})"
 # 4. Grafana off: agents query Prometheus/Jaeger/OpenSearch directly, and Grafana used ~1 CPU of the 4-CPU VM.
 grafana:
   enabled: false

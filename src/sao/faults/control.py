@@ -42,17 +42,30 @@ def inject(fault_id: str, wait: bool = True) -> dict:
         raise RuntimeError(f"a fault is already active: {list(state)}; revert it first")
     saved = [kube.get(kind, name) for kind, name in f.touches]
     rec = {"id": f.id, "saved": saved, "creates": f.creates, "restart": f.restart,
-           "restart_after_revert": f.restart_after_revert, "injected_at": None}
+           "restart_after_revert": f.restart_after_revert, "reload_pods": f.reload_pods, "injected_at": None}
     _save({f.id: rec})  # saved BEFORE the change: a crash during inject is still revertible
     f.inject()
     for d in f.restart:
         kube.rollout_restart(d)
     rec["injected_at"] = time.time()
     _save({f.id: rec})
-    if wait:
+    if wait or f.reload_pods:
         for d in f.restart:
             kube.rollout_wait(d, 120)
+    _reload(f.reload_pods, wait)
     return rec
+
+
+def _reload(deployments: list[str], wait: bool) -> None:
+    """Recreate flag clients' pods after flagd is back (see Fault.reload_pods)."""
+    for d in deployments:
+        kube.delete_pods(d)
+    if wait and deployments:
+        time.sleep(5)  # old pods are terminating; healthy() skips them and waits for the new ones
+        for _ in range(36):
+            if healthy()[0]:
+                break
+            time.sleep(5)
 
 
 def revert_all(wait: bool = True) -> list[str]:
@@ -71,6 +84,7 @@ def revert_all(wait: bool = True) -> list[str]:
                 o["metadata"]["name"] for o in rec["saved"] if o["kind"] == "Deployment"}
             for d in deps:
                 kube.rollout_wait(d, 180)
+        _reload(rec.get("reload_pods", []), wait)
         done.append(fid)
     if STATE.exists():
         STATE.unlink()

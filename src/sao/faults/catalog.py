@@ -33,6 +33,7 @@ class Fault:
     root: tuple[str, str] = ("", "")                             # (kind, name) of the root cause
     restart: list[str] = field(default_factory=list)             # deployments restarted after inject and revert
     restart_after_revert: list[str] = field(default_factory=list)  # app services restarted after revert only
+    reload_pods: list[str] = field(default_factory=list)  # flag clients recreated after inject and revert (pods only)
     settle_s: int = 150                                          # time for symptoms to show
 
     def inject(self) -> None:
@@ -56,6 +57,8 @@ class Fault:
 
 # ---------- flagd ----------
 FLAG_CM = "flagd-config"
+# service alerts that count as a symptom: the benchmark's two, plus consumer lag, which queue faults raise (D28)
+SYMPTOM_ALERTS = ("RequestErrorRate", "RequestLatency", "KafkaConsumerLag")
 FLAG_KEY = "demo.flagd.json"
 
 
@@ -227,6 +230,12 @@ for _f in FAULTS.values():
     if isinstance(_f, FlagFault) and _f.symptoms:
         _f.restart_after_revert = [_f.symptoms[0]]
 
+# checkout (Go) and fraud-detection (Java) keep the flag value they had when flagd restarted, so kafkaQueueProblems
+# never reached the consumer and no lag built up (found 2026-11-21, D28). Their pods are recreated once flagd is back,
+# after inject and after revert; deleting pods leaves no Deployment change for the agents to mistake for a rollout.
+FAULTS["flag-kafka-queue-problems"].reload_pods = ["checkout", "fraud-detection"]
+FAULTS["flag-kafka-queue-problems"].settle_s = 210
+
 
 # ---------- harder episodes (evals/PLAN.md "Harder live faults") ----------
 # The single faults above are a ceiling for diagnosis (D17): one clean fault, one obvious change. Two kinds of
@@ -280,6 +289,7 @@ def _compound(fid: str, *parts: Fault) -> Compound:
                     symptoms=uniq(s for p in real for s in p.symptoms), root=real[0].root,
                     restart=uniq(r for p in parts for r in p.restart),
                     restart_after_revert=uniq(r for p in parts for r in p.restart_after_revert),
+                    reload_pods=uniq(r for p in parts for r in p.reload_pods),
                     settle_s=max(300, *(p.settle_s for p in parts)), parts=list(parts))
 
 
