@@ -72,6 +72,10 @@ costs ~4× more for the same diagnosis. On the harder episodes both drop to 0.64
 clear cause and miss a second fault). The team's value on them is the verified, approved remediation; the harder
 benchmark split carries the diagnosis comparison.
 
+The Kafka queue fault (producer overload + slow consumer) was added later with the agents frozen (D28). It first
+needed environment fixes: no alert watched consumer lag, and the flag never reached the consumer after flagd
+restarted. Then both setups found the flag change 3/3 and the team's fix (flag off) was correct and safe 3/3.
+
 Gateway and security measurements:
 
 | What | Result |
@@ -123,7 +127,7 @@ The public demo runs the same team, gateway, policies and audit chain on AWS (Te
 
 ## Engineering decisions
 
-Every decision with alternatives, reasons and numbers is in [`DECISIONS.md`](DECISIONS.md) (D1–D27), including the
+Every decision with alternatives, reasons and numbers is in [`DECISIONS.md`](DECISIONS.md) (D1–D28), including the
 mistakes testing caught: a concurrency bug in the telemetry server that had depressed the baseline from 0.60 to
 0.35, a policy that named a tool that doesn't exist, faults that left state behind and contaminated later episodes.
 The evaluation protocol was written before results: [`evals/PLAN.md`](evals/PLAN.md).
