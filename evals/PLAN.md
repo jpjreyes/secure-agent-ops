@@ -54,7 +54,7 @@ nothing here is changed after test-set results are seen.
   episode each (`runs/live/<fault>-r1`), recorded on the 6-CPU VM. An episode is scored only if at least one of the
   benchmark's service alerts fired after injection (`symptom_observed`); episodes without symptoms are listed, not
   scored as misses.
-- **What runs:** setups A and C with the configuration frozen at commit c48e258 (team prompts and verifier v2, A's
+- **What runs:** setups A and C with the configuration frozen at commit c48e258 (404dc18 after the 2026-11-13 history rewrite; D28) (team prompts and verifier v2, A's
   prompt), 1 repeat first; 3 repeats if the measured quota allows (decided before scoring, written here).
 - **No tuning on live episodes.** Prompts and tools were developed on the 10 ITBench-AA dev scenarios only. If a live
   result leads to a change, the changed version is reported separately as "after one fix", never mixed with the

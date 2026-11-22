@@ -218,7 +218,7 @@ const RESULTS = [
   ["Log-injection attacks (AgentDojo templates × 3 goals × 10 incidents × 3 setups)", "0 / 90 hijacked · 0 / 90 prompt leaks"],
   ["Planted false evidence (fake logs and Kubernetes Events against a healthy service)", "team fooled 0 / 30 · single agent 2 / 30"],
   ["ITBench-AA held-out test (30 incidents × 5 runs, 390 runs)", "team 0.57 · single agent 0.53 · the verifier adds +0.09"],
-  ["Live faults injected into a real cluster (17 episodes)", "proposed fixes safe 17 / 17 · correct 15 / 17"],
+  ["Live faults injected into a real cluster (18 episodes)", "proposed fixes safe 18 / 18 · correct 16 / 18"],
   ["This deployment vs the evaluated system (5 incidents, same scores?)", "5 / 5 identical · mean 0.70 = 0.70"],
 ];
 

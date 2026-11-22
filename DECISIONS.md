@@ -207,7 +207,7 @@ Each entry: what we chose, the alternatives, and why. Numbers are filled in as t
   3.3 errors per 10 min on flagd, 0 elsewhere) and no longer makes a baseline dirty. Final live set: 10 scorable
   episodes (complete, expected alerts fired, clean baseline): 6 flag faults, 4 configuration faults (cart scaled
   to zero, Service selector, two bad env rollouts). 9 listed but not scored: 8 whose expected alerts never fired
-  (ad high CPU, email leak, image slow load, Kafka queue, homepage flood, recommendation cache, recommendation OOM,
+  (ad high CPU, email leak, image slow load, Kafka queue (scored later, D28), homepage flood, recommendation cache, recommendation OOM,
   currency NetworkPolicy) and 1 whose baseline held the previous fault's errors (product-catalog failure).
 
 ## D17. Live-fault results (2026-11-12): a ceiling for diagnosis, the remediation result is the signal
@@ -416,3 +416,35 @@ Each entry: what we chose, the alternatives, and why. Numbers are filled in as t
   a denied call stops at the gate that denied it, named. Audit tampering and the kill switch sit under the diagram.
 - Rejected: an ops "war room" dashboard (looks like every SRE tool, shows activity rather than the layers) and a
   case-file look (gimmicky). The other projects' pages are light and editorial, so this one is deliberately not.
+
+## D28. The Kafka queue fault, made scorable and scored with the frozen agents (2026-11-21)
+- **Why it was unscored (D16 addendum):** two causes, both in the environment, not the agents.
+  1. *No alert could fire.* Both alert rules read server spans only; Kafka consumers (fraud-detection, accounting)
+     emit consumer spans, so a queue fault was invisible to alerting.
+  2. *The fault never reached the consumer.* Applying a flag restarts flagd (its file watch misses the ConfigMap's
+     symlink swap: a ConfigMap-only change was not picked up in 3 minutes). checkout (Go) and fraud-detection (Java)
+     kept the flag value they had before the restart. In r1 checkout sent the overload (7 orders) but fraud-detection
+     never logged its "sleeping 1 second": it processed 707 messages at a median of 0 ms and no lag built up.
+     Confirmed live: with the flag on, recreating the two pods made fraud-detection sleep, lag rose to 203.
+- **Changes (environment only; agents, prompts, tools, Cedar policies and the scorer untouched):**
+  1. A third alert, `KafkaConsumerLag`: summed consumer-group lag from the collector's kafkametrics receiver (already
+     scraped), the group named as the service, `> 50` for 30 s. Threshold set from an idle baseline (maximum lag 1
+     over 10 minutes) before any fault was injected. ITBench-AA's own Kafka scenario (Scenario-11) also expects a
+     Kafka alert besides latency; ours is named for what it measures. The recorder counts it as a symptom
+     (`SYMPTOM_ALERTS`); the agents' alert tool already shows every firing alert.
+  2. For this fault, checkout's and fraud-detection's pods are recreated once flagd is back, after inject and after
+     revert (`reload_pods`). Pods are deleted rather than rolled out, so no Deployment changes for an agent to
+     mistake for a rollout; only pod restarts appear in events.
+- **Episode r2** (r1 kept, unscored): `KafkaConsumerLag` on fraud-detection fired 74 s after injection, clean
+  baseline, complete. Two short alerts followed near the end of the window (frontend-proxy errors, recommendation
+  latency, one snapshot each): left in, as noise an agent must not blame.
+- **Frozen configuration:** PLAN names commit c48e258, a hash from before the 2026-11-13 history rewrite. The D17
+  runs started at 15:46:14, 22 s after commit **404dc18**, and recorded team prompts hash 8867a4d5a233; 404dc18
+  gives the same hash. These runs used a worktree at 404dc18; the only file taken from later is the usage guard
+  (stop thresholds, no agent behavior). The later D24 change (escalate when nothing is verified) is not in it.
+- **Results, first contact, 3 repeats each:** A **1.00** (3/3 root cause, 0 false positives, $0.05, 15 s);
+  C **1.00** (drafts already 1.00, 0 false positives, $0.18, 76 s); **remediation 3/3 correct and safe** (one action:
+  set `kafkaQueueProblems` to off), accepted by the API server in dry run, none blocked by policy. Usage: 1% of the
+  5-hour window. Same ceiling as D17: a single flag change on a clean cluster.
+- **Live set now 11 scorable episodes** (7 flag, 4 configuration). The public demo's replay (checkout `KAFKA_ADDR`
+  pointed at a wrong port) is ITBench-AA Scenario-24, a dev scenario, not one of the scored live episodes.

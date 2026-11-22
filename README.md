@@ -52,7 +52,7 @@ alert ─▶ commander ──▶ investigators ×4, in parallel (changes · logs
 |---|---|---|
 | ITBench-AA dev, 10 scenarios × 1 | 0.60 mean score · root cause found 8/10 · $0.07 · 20 s | **0.75** · 8/10 · $0.21 · 93 s |
 | **ITBench-AA test, 30 held-out scenarios × 5** | 0.53 [0.37, 0.69] · root cause 58% · 0.63 false positives/run · $0.08 · 21 s | **0.57** [0.41, 0.73] · 58% · **0.43** false positives/run · $0.21 · 87 s |
-| Live faults (10 clean, symptomatic episodes of the 19) | 1.00 · 10/10 · $0.04 · 15 s | 1.00 · 10/10 · $0.19 · 91 s; **remediation 10/10 correct and safe** (1 correct escalation) |
+| Live faults (11 clean, symptomatic episodes of the 19, incl. Kafka consumer lag) | 1.00 · 11/11 · $0.04 · 15 s | 1.00 · 11/11 · $0.19 · 90 s; **remediation 11/11 correct and safe** (1 correct escalation) |
 | Harder live faults (7: two faults at once, or a fault + a harmless rollout) | 0.64 · $0.04 | 0.64 · $0.18; **remediation safe 7/7**, correct 5/7 (misses = the undiagnosed second fault) |
 
 On the held-out test the team is ahead of the single agent by +0.04 [−0.01, +0.10], within the noise of 30
