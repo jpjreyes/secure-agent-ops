@@ -9,7 +9,7 @@ import { Schematic } from "@/components/schematic";
 import { usePlayback } from "@/lib/playback";
 import { API, type RunDoc } from "@/lib/run";
 
-const REPO = "https://github.com/jpreyesm03/secure-agent-ops";
+const REPO = "https://github.com/jpjreyes/secure-agent-ops";
 const REPLAYS = [
   { id: "action", label: "Hijack the fix" },
   { id: "diagnosis", label: "Plant a false root cause" },

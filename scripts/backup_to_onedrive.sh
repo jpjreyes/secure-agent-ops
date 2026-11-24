@@ -21,7 +21,7 @@ cat > "$DEST/README.md" <<EOF
 # P1 Secure Agent Ops: backup
 
 The working repo lives at \`~/other/secure-agent-ops\` (outside OneDrive) and on GitHub:
-https://github.com/jpreyesm03/secure-agent-ops.
+https://github.com/jpjreyes/secure-agent-ops.
 
 This folder is an automatic backup, refreshed after every commit:
 - \`secure-agent-ops.bundle\`: the full git history in one file.
